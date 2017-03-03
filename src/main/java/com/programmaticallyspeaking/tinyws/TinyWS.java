@@ -4,6 +4,11 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -30,11 +35,15 @@ public class TinyWS {
         private final Socket clientSocket;
         private final OutputStream out;
         private final InputStream in;
+        private final CharsetDecoder decoder;
 
         ClientHandler(Socket clientSocket) throws IOException {
             this.clientSocket = clientSocket;
             out = clientSocket.getOutputStream();
             in = clientSocket.getInputStream();
+
+            // Not thread-safe but we're in a single thread!
+            decoder = Charset.forName("UTF-8").newDecoder();
         }
 
         @Override
@@ -121,7 +130,7 @@ public class TinyWS {
                 case 1:
                     System.out.println("* Text frame");
                     // TODO: Fail if not valid UTF-8!!
-                    String data = toUtf8String(result.payloadData);
+                    String data = toUTF8String(result.payloadData);
                     System.out.println("DATA: " + data);
 
                     // Echo
@@ -183,6 +192,15 @@ public class TinyWS {
             outputLine(writer, "");
             writer.flush();
             // Note: Do NOT close the writer, as the stream must remain open
+        }
+
+        private String toUTF8String(byte[] bytes) throws CharacterCodingException {
+            return toUTF8String(bytes, 0, bytes.length);
+        }
+        private String toUTF8String(byte[] bytes, int offset, int len) throws CharacterCodingException {
+            decoder.reset();
+            CharBuffer buf = decoder.decode(ByteBuffer.wrap(bytes, offset, len));
+            return buf.toString();
         }
     }
 
@@ -424,9 +442,11 @@ public class TinyWS {
         return Base64.getEncoder().encodeToString(result);
     }
 
+    // TODO: Remove!
     static String toUtf8String(byte[] data) {
         return toUtf8String(data, 0, data.length);
     }
+    // TODO: Remove!
     static String toUtf8String(byte[] data, int offset, int len) {
         try {
             return new String(data, offset, len, "utf-8");
