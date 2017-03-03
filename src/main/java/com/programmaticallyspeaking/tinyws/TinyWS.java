@@ -28,18 +28,13 @@ public class TinyWS {
     private static class ClientHandler implements Runnable {
 
         private final Socket clientSocket;
-//        private final PrintWriter out;
-//        private final BufferedReader in;
         private final OutputStream out;
         private final InputStream in;
 
         ClientHandler(Socket clientSocket) throws IOException {
             this.clientSocket = clientSocket;
-            // DON'T USE AUTOFLUSH!!
             out = clientSocket.getOutputStream();
             in = clientSocket.getInputStream();
-//            out = new PrintWriter(clientSocket.getOutputStream(), false);
-//            in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
         }
 
         @Override
@@ -120,7 +115,11 @@ public class TinyWS {
 
                     break;
                 case 2:
-                    System.out.println("* Binary frame (ignoring)");
+                    System.out.println("* Binary frame");
+                    byte[] bdata = result.payloadData;
+
+                    // Echo
+                    writeBytes(frameDataForBinaryFrame(bdata));
                     break;
                 case 8:
                     System.out.println("* Connection close frame");
@@ -186,24 +185,43 @@ public class TinyWS {
         return frameDataFor(1, s);
     }
 
+    static byte[] frameDataForBinaryFrame(byte[] data) {
+        return frameDataFor(2, data);
+    }
+
     static byte[] frameDataFor(int opCode, byte[] data) {
         int firstByte = 128 | opCode; // FIN + opCode
         int dataLen = data.length;
         int secondByte;
+        int extraLengthBytes = 0;
         if (dataLen < 126) {
             secondByte = dataLen; // no masking
         } else if (dataLen < 65536) {
-            throw new UnsupportedOperationException("TODO");
-//            secondByte = 126;
+            secondByte = 126;
+            extraLengthBytes = 2;
         } else {
-            throw new UnsupportedOperationException("TODO");
-//            secondByte = 127;
+            secondByte = 127;
+            extraLengthBytes = 8;
         }
-        byte[] result = new byte[2 + dataLen];
+        byte[] result = new byte[2 + extraLengthBytes + dataLen];
         result[0] = (byte) firstByte;
         result[1] = (byte) secondByte;
-        System.arraycopy(data, 0, result, 2, data.length);
+        System.out.println(">> B1: " + firstByte);
+        System.out.println(">> B2: " + secondByte);
+        System.out.println(">> XL: " + extraLengthBytes);
+        if (extraLengthBytes > 0) {
+            writeNumberInArray(data.length, result, 2, extraLengthBytes);
+        }
+        System.arraycopy(data, 0, result, 2 + extraLengthBytes, data.length);
         return result;
+    }
+
+    private static void writeNumberInArray(int number, byte[] array, int offset, int len) {
+        // Start from the end (network byte order), assume array is filled with zeros.
+        for (int i = offset + len - 1; i >= offset; i--) {
+            array[i] = (byte) (number & 0xff);
+            number = number >> 8;
+        }
     }
 
     private static class Frame {
@@ -231,8 +249,21 @@ public class TinyWS {
 
         private static byte[] readBytes(InputStream in, int len) throws IOException {
             byte[] buf = new byte[len];
-            int readLen = in.read(buf);
-            if (readLen < buf.length) throw new IOException("Too few bytes read, expected " + buf.length + " but got " + readLen);
+            int totalRead = 0;
+            int offs = 0;
+            while (totalRead < len) {
+                int readLen = in.read(buf, offs, len - offs);
+                if (readLen < 0) break;
+                totalRead += readLen;
+                offs += readLen;
+            }
+            if (totalRead != len) throw new IOException("Expected to read " + len + " bytes but read " + totalRead);
+////            if (readLen < buf.length) throw new IOException("Too few bytes read, expected " + buf.length + " but got " + readLen);
+//            if (readLen < buf.length) {
+//                byte[] tmp = new byte[readLen];
+//                System.arraycopy(buf, 0, tmp, 0, readLen);
+//                return tmp;
+//            }
             return buf;
         }
 
