@@ -143,6 +143,7 @@ public class TinyWS {
                     break;
                 default:
                     System.err.println("* Unknown frame: " + result.opCode);
+                    abort();
                     break;
 
             }
