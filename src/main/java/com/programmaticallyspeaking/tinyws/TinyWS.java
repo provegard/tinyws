@@ -76,8 +76,22 @@ public class TinyWS {
         }
 
         private void handleBatch(List<Frame> frameBatch) throws IOException {
+            Frame firstFrame = frameBatch.get(0);
+
+            if (firstFrame.opCode == 0) throw new IOException("Continuation frame with nothing to continue");
+
             Frame lastOne = frameBatch.get(frameBatch.size() - 1);
             if (!lastOne.isFin) return;
+            if (firstFrame != lastOne) {
+                if (lastOne.isControl()) {
+                    // Interleaved control frame
+                    frameBatch.remove(frameBatch.size() - 1);
+                    handleResultFrame(lastOne);
+                    return;
+                } else if (lastOne.opCode > 0) {
+                    throw new IOException("Continuation frame must have opcode 0");
+                }
+            }
 
             Frame result;
 
@@ -90,7 +104,6 @@ public class TinyWS {
                     System.arraycopy(frame.payloadData, 0, allTheData, offs, frame.payloadData.length);
                     offs += frame.payloadData.length;
                 }
-                Frame firstFrame = frameBatch.get(0);
                 result = new Frame(firstFrame.opCode, allTheData, true);
             } else result = lastOne;
 
@@ -101,9 +114,10 @@ public class TinyWS {
 
         private void handleResultFrame(Frame result) throws IOException {
             switch (result.opCode) {
-                case 0:
-                    System.out.println("* Continuation frame (ignoring)");
-                    break;
+//                case 0:
+//                    System.out.println("* Continuation frame (error)");
+//                    abort();
+//                    break;
                 case 1:
                     System.out.println("* Text frame");
                     // TODO: Fail if not valid UTF-8!!
@@ -235,6 +249,10 @@ public class TinyWS {
         final byte[] payloadData;
         final boolean isFin;
 
+        boolean isControl() {
+            return (opCode & 8) == 8;
+        }
+
         private Frame(int opCode, byte[] payloadData, boolean isFin) {
             this.opCode = opCode;
             this.payloadData = payloadData;
@@ -299,7 +317,10 @@ public class TinyWS {
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
             System.out.println("== LEN: " + len);
-            if (isControlFrame && len > 125) throw new IOException("Control frame length exceeded"); //TODO: Protocol Error!
+            if (isControlFrame) {
+                if (len > 125) throw new IOException("Control frame length exceeded"); //TODO: Protocol Error!
+                if (!isFin) throw new IOException("Control frame cannot be fragmented"); //TODO: Protocol Error!
+            }
             // TODO: Control frame + non-FIN
             if (len == 126) {
                 // 2 bytes of extended len
