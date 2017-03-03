@@ -116,10 +116,8 @@ public class TinyWS {
                     break;
                 case 2:
                     System.out.println("* Binary frame");
-                    byte[] bdata = result.payloadData;
-
                     // Echo
-                    writeBytes(frameDataForBinaryFrame(bdata));
+                    writeBytes(frameDataForBinaryFrame(result.payloadData));
                     break;
                 case 8:
                     System.out.println("* Connection close frame");
@@ -136,7 +134,9 @@ public class TinyWS {
                     abort();
                     break;
                 case 9:
-                    System.out.println("* Ping frame (TODO)");
+                    System.out.println("* Ping frame");
+                    // Echo
+                    writeBytes(frameDataForPongFrame(result.payloadData));
                     break;
                 case 10:
                     System.out.println("* Pong frame (TODO)");
@@ -187,6 +187,10 @@ public class TinyWS {
 
     static byte[] frameDataForBinaryFrame(byte[] data) {
         return frameDataFor(2, data);
+    }
+
+    static byte[] frameDataForPongFrame(byte[] data) {
+        return frameDataFor(10, data);
     }
 
     static byte[] frameDataFor(int opCode, byte[] data) {
@@ -287,12 +291,15 @@ public class TinyWS {
             boolean hasZeroReserved = (firstByte & 112) == 0;
             if (!hasZeroReserved) throw new IllegalArgumentException("Reserved frame bytes 2-4 must be zero.");
             int opCode = (firstByte & 15);
+            boolean isControlFrame = (opCode & 8) == 8;
             System.out.println("== OP: " + opCode);
             int secondByte = readUnsignedByte(in);
             System.out.println("== B2: " + secondByte);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
             System.out.println("== LEN: " + len);
+            if (isControlFrame && len > 125) throw new IOException("Control frame length exceeded"); //TODO: Protocol Error!
+            // TODO: Control frame + non-FIN
             if (len == 126) {
                 // 2 bytes of extended len
                 byte[] extLen = readBytes(in, 2);
