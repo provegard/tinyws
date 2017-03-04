@@ -328,13 +328,6 @@ public class TinyWS {
         }
     }
 
-    private static String createResponseKey(String key) throws NoSuchAlgorithmException {
-        MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
-        byte[] rawBytes = (key + HANDSHAKE_GUID).getBytes();
-        byte[] result = sha1.digest(rawBytes);
-        return Base64.getEncoder().encodeToString(result);
-    }
-
     static class PayloadCoder {
         private final Charset charset;
         private final CharsetDecoder decoder;
@@ -381,11 +374,6 @@ public class TinyWS {
     static class InvalidFramePayloadData extends WebSocketError {
         InvalidFramePayloadData() {
             super(1007, "Invalid frame payload data");
-        }
-    }
-    static class NormalClosure extends WebSocketError {
-        NormalClosure() {
-            super(1000, "Normal closure");
         }
     }
 
@@ -442,15 +430,22 @@ public class TinyWS {
             out.write(data);
             out.flush();
         }
+    }
 
-        byte[] numberToBytes(int number, int len) {
-            byte[] array = new byte[len];
-            // Start from the end (network byte order), assume array is filled with zeros.
-            for (int i = len - 1; i >= 0; i--) {
-                array[i] = (byte) (number & 0xff);
-                number = number >> 8;
-            }
-            return array;
+    static byte[] numberToBytes(int number, int len) {
+        byte[] array = new byte[len];
+        // Start from the end (network byte order), assume array is filled with zeros.
+        for (int i = len - 1; i >= 0; i--) {
+            array[i] = (byte) (number & 0xff);
+            number = number >> 8;
         }
+        return array;
+    }
+
+    private static String createResponseKey(String key) throws NoSuchAlgorithmException {
+        MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+        byte[] rawBytes = (key + HANDSHAKE_GUID).getBytes();
+        byte[] result = sha1.digest(rawBytes);
+        return Base64.getEncoder().encodeToString(result);
     }
 }

@@ -3,13 +3,11 @@ package com.programmaticallyspeaking.tinyws;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 
 import static org.testng.internal.junit.ArrayAsserts.assertArrayEquals;
 
-public class FrameWriterTest {
+public class TinyWSTest {
 
     @DataProvider
     public Object[][] numberToBytes_data() {
@@ -22,14 +20,9 @@ public class FrameWriterTest {
         };
     }
 
-    private TinyWS.FrameWriter writerForStream(OutputStream os) {
-        return new TinyWS.FrameWriter(os, new TinyWS.PayloadCoder());
-    }
-
     @Test(dataProvider = "numberToBytes_data")
     public void numberToBytes_should_yield_correct_data(int number, int len, byte[] expected) throws IOException {
-        TinyWS.FrameWriter writer = writerForStream(new ByteArrayOutputStream());
-        byte[] actual = writer.numberToBytes(number, len);
+        byte[] actual = TinyWS.numberToBytes(number, len);
         assertArrayEquals(expected, actual);
     }
 }
