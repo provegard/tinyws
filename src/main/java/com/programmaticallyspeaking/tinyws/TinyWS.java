@@ -6,7 +6,6 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.security.MessageDigest;
@@ -25,7 +24,6 @@ public class TinyWS {
             System.out.println("Accepted");
             Thread t = new Thread(new ClientHandler(clientSocket));
             t.start();
-//                t.join();
         }
         System.out.println("Bye");
     }
@@ -78,8 +76,6 @@ public class TinyWS {
 
             String key = headers.key();
             String responseKey = createResponseKey(key);
-            System.out.println("Client key = " + key);
-            System.out.println("Response key = " + responseKey);
 
             sendHandshakeRespose(responseKey);
 
@@ -129,68 +125,45 @@ public class TinyWS {
 
         private void handleResultFrame(Frame result) throws IOException {
             switch (result.opCode) {
-//                case 0:
-//                    System.out.println("* Continuation frame (error)");
-//                    abort();
-//                    break;
                 case 1:
-                    System.out.println("* Text frame");
-                    // TODO: Fail if not valid UTF-8!!
                     String data = payloadCoder.decode(result.payloadData);
-                    System.out.println("DATA: " + data);
 
                     // Echo
                     writeBytes(frameDataForTextFrame(payloadCoder, data));
 
                     break;
                 case 2:
-                    System.out.println("* Binary frame");
                     // Echo
                     writeBytes(frameDataForBinaryFrame(result.payloadData));
                     break;
                 case 8:
-                    System.out.println("* Connection close frame");
                     CloseData cd = result.toCloseData(payloadCoder);
-                    System.out.println(cd);
 
                     if (cd.hasInvalidCode()) throw new ProtocolError();
 
                     // 1000 is normal close
                     int i = cd.code != null ? cd.code : 1000;
                     throw new WebSocketError(i, "");
-
-//                    writeBytes(frameDataForCloseFrame(payloadCoder, i, ""));
-//
-//                    // TODO:
-//                    // If an endpoint receives a Close frame and did not previously send a
-//                    // Close frame, the endpoint MUST send a Close frame in response.
-//
-//                    abort();
-//                    break;
                 case 9:
-                    System.out.println("* Ping frame");
-                    // Echo
+                    // Pong
                     writeBytes(frameDataForPongFrame(result.payloadData));
                     break;
                 case 10:
-                    System.out.println("* Pong frame (TODO)");
+                    // Pong is ignored
                     break;
                 default:
-                    System.err.println("* Unknown frame: " + result.opCode);
                     throw new ProtocolError();
-//                    abort();
-//                    break;
 
             }
         }
 
         private void writeBytes(byte[] bytes) throws IOException {
-            System.out.println("Writing " + bytes.length + " bytes ...");
+//            System.out.println("Writing " + bytes.length + " bytes ...");
             out.write(bytes);
         }
 
         private void outputLine(PrintWriter writer, String data) {
-            System.out.println("==> " + data);
+//            System.out.println("==> " + data);
             writer.print(data);
             writer.print("\r\n");
         }
@@ -246,9 +219,6 @@ public class TinyWS {
         byte[] result = new byte[2 + extraLengthBytes + dataLen];
         result[0] = (byte) firstByte;
         result[1] = (byte) secondByte;
-        System.out.println(">> B1: " + firstByte);
-        System.out.println(">> B2: " + secondByte);
-        System.out.println(">> XL: " + extraLengthBytes);
         if (extraLengthBytes > 0) {
             writeNumberInArray(data.length, result, 2, extraLengthBytes);
         }
@@ -325,19 +295,14 @@ public class TinyWS {
 
         static Frame read(InputStream in) throws IOException {
             int firstByte = readUnsignedByte(in);
-            System.out.println("== B1: " + firstByte);
             boolean isFin = (firstByte & 128) == 128;
-            System.out.println("== FIN: " + isFin);
             boolean hasZeroReserved = (firstByte & 112) == 0;
             if (!hasZeroReserved) throw new IllegalArgumentException("Reserved frame bytes 2-4 must be zero.");
             int opCode = (firstByte & 15);
             boolean isControlFrame = (opCode & 8) == 8;
-            System.out.println("== OP: " + opCode);
             int secondByte = readUnsignedByte(in);
-            System.out.println("== B2: " + secondByte);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
-            System.out.println("== LEN: " + len);
             if (isControlFrame) {
                 if (len > 125) throw new IOException("Control frame length exceeded"); //TODO: Protocol Error!
                 if (!isFin) throw new IOException("Control frame cannot be fragmented"); //TODO: Protocol Error!
@@ -355,12 +320,7 @@ public class TinyWS {
                 if (tmp > Integer.MAX_VALUE) throw new IllegalArgumentException("Frame too long: " + tmp);
                 len = (int) tmp;
             }
-            System.out.println("== LEN: " + len);
-            byte[] maskingKey = null;
-            if (isMasked) {
-                maskingKey = readBytes(in, 4);
-                System.out.println("== MASK!");
-            }
+            byte[] maskingKey = isMasked ? readBytes(in, 4) : null;
             byte[] payloadData = unmaskIfNeededInPlace(readBytes(in, len), maskingKey);
             return new Frame(opCode, payloadData, isFin);
         }
@@ -399,14 +359,6 @@ public class TinyWS {
             if (code >= 3000) return false; // 3000-3999 and 4000-4999 are valid
             return code == 1004 || code == 1005 || code == 1006 || code > 1011;
         }
-
-        @Override
-        public String toString() {
-            return "CloseData{" +
-                    "code=" + code +
-                    ", reason='" + reason + '\'' +
-                    '}';
-        }
     }
 
     private static class Headers {
@@ -419,9 +371,7 @@ public class TinyWS {
         boolean isProperUpgrade() {
             return "websocket".equalsIgnoreCase(headers.get("Upgrade")) && "Upgrade".equalsIgnoreCase(headers.get("Connection"));
         }
-//        int version() {
-//            String versionStr =
-//        }
+
         String key() {
             String key = headers.get("Sec-WebSocket-Key");
             if (key == null) throw new IllegalStateException("Missing Sec-WebSocket-Key in handshake.");
@@ -435,10 +385,7 @@ public class TinyWS {
             while (!"".equals((inputLine = reader.readLine()))) {
                 String[] keyValue = inputLine.split(":", 2);
                 // Ignore the initial GET line here. TODO: Don't!
-                if (keyValue.length == 2) {
-                    System.out.println("<== " + inputLine);
-                    headers.put(keyValue[0], keyValue[1].trim());
-                }
+                if (keyValue.length == 2) headers.put(keyValue[0], keyValue[1].trim());
             }
             // Note: Do NOT close the reader, because the stream must remain open!
             return new Headers(headers);
