@@ -153,6 +153,8 @@ public class TinyWS {
                     CloseData cd = result.toCloseData(payloadCoder);
                     System.out.println(cd);
 
+                    if (cd.hasInvalidCode()) throw new ProtocolError();
+
                     // 1000 is normal close
                     int i = cd.code != null ? cd.code : 1000;
                     throw new WebSocketError(i, "");
@@ -389,6 +391,13 @@ public class TinyWS {
         CloseData(Integer code, String reason) {
             this.code = code;
             this.reason = reason;
+        }
+
+        boolean hasInvalidCode() {
+            if (code == null) return false; // no code isn't invalid
+            if (code < 1000 || code >= 5000) return true;
+            if (code >= 3000) return false; // 3000-3999 and 4000-4999 are valid
+            return code == 1004 || code == 1005 || code == 1006 || code > 1011;
         }
 
         @Override
