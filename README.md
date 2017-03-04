@@ -14,7 +14,7 @@ several megabytes of dependencies.
 Version 0.00000001... Currently it's an application instead of a reusable
 library. Very experimental and very much a hack.
 
-It passes test case 1.1.1 of [autobahn-testsuite](https://github.com/crossbario/autobahn-testsuite).
+It passes all implemented tests of [autobahn-testsuite](https://github.com/crossbario/autobahn-testsuite).
 
 ## Author
 
