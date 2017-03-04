@@ -11,21 +11,65 @@ import java.nio.charset.CharsetDecoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadFactory;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class TinyWS {
     private static final String HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    private final ThreadFactory threadFactory;
+    private final Executor handlerExecutor;
+    private final Options options;
+    private ServerSocket serverSocket;
+    private Map<String, WebSocketHandler> handlers = new HashMap<>();
 
-    public static void main(String[] args) throws IOException, NoSuchAlgorithmException, InterruptedException {
-        System.out.println("Listening");
-        boolean running = true;
-        ServerSocket serverSocket = new ServerSocket(9001);
-        while (running) {
-            Socket clientSocket = serverSocket.accept();
-            System.out.println("Accepted");
-            Thread t = new Thread(new ClientHandler(clientSocket));
-            t.start();
+    public TinyWS(ThreadFactory threadFactory, Executor handlerExecutor, Options options) {
+        this.threadFactory = threadFactory;
+        this.handlerExecutor = handlerExecutor;
+        this.options = options;
+    }
+
+    public void addHandler(String endpoint, WebSocketHandler handler) {
+        if (serverSocket != null) throw new IllegalStateException("Please add handlers before starting the server.");
+        handlers.put(endpoint, handler);
+    }
+
+    public void start() throws IOException {
+        Integer backlog = options.backlog;
+        serverSocket = backlog == null
+            ? new ServerSocket(options.port)
+            : new ServerSocket(options.port, backlog);
+        Thread acceptThread = threadFactory.newThread(this::acceptInLoop);
+        acceptThread.start();
+    }
+
+    public void stop() {
+        if (serverSocket == null) return;
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            // ignored
+            // TODO: Pass to error handler !?
         }
-        System.out.println("Bye");
+        serverSocket = null;
+    }
+
+    private void acceptInLoop() {
+        try {
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                Thread t = threadFactory.newThread(new ClientHandler(clientSocket, handlers::get, (handler, fun) -> {
+                    if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
+                }));
+                t.start();
+            }
+        } catch (SocketException ignore) {
+            // Socket was closed
+        } catch (Exception ex) {
+            // TODO: Pass to error handler !?
+        }
     }
 
     private static class ClientHandler implements Runnable {
@@ -33,15 +77,19 @@ public class TinyWS {
         private final Socket clientSocket;
         private final OutputStream out;
         private final InputStream in;
+        private final Function<String, WebSocketHandler> handlerLookup;
+        private final BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor;
         private final PayloadCoder payloadCoder;
         private final FrameWriter frameWriter;
+        private WebSocketHandler handler;
 
-        ClientHandler(Socket clientSocket) throws IOException {
+        ClientHandler(Socket clientSocket, Function<String, WebSocketHandler> handlerLookup, BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor) throws IOException {
             this.clientSocket = clientSocket;
             out = clientSocket.getOutputStream();
             in = clientSocket.getInputStream();
+            this.handlerLookup = handlerLookup;
+            this.handlerExecutor = handlerExecutor;
 
-            // Not thread-safe but we're in a single thread!
             payloadCoder = new PayloadCoder();
             frameWriter = new FrameWriter(out, payloadCoder);
         }
@@ -51,11 +99,13 @@ public class TinyWS {
             try {
                 communicate();
             } catch (WebSocketError ex) {
-                try {
-                    frameWriter.writeCloseFrame(ex.code, ex.reason);
-                } catch (IOException e) {
-                    // Ignored...
-                }
+                System.out.println(ex);
+                doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
+                handlerExecutor.accept(handler, h -> h.onClosedByClient(ex.code, ex.reason));
+            } catch (IllegalArgumentException ex) {
+                sendBadRequestResponse();
+            } catch (FileNotFoundException ex) {
+                sendNotFoundResponse();
             } catch (SocketException ex) {
                 System.err.println(ex.getMessage());
             } catch (Exception ex) {
@@ -65,21 +115,25 @@ public class TinyWS {
         }
 
         private void abort() {
-            try {
-                clientSocket.close();
-            } catch (IOException ignore) {
-                // Ignoring close failure...
-            }
+            doIgnoringExceptions(clientSocket::close);
         }
 
         private void communicate() throws IOException, NoSuchAlgorithmException {
             Headers headers = Headers.read(in);
             if (!headers.isProperUpgrade()) throw new IllegalArgumentException("Handshake has malformed upgrade.");
+            if (headers.version() != 13) throw new IllegalArgumentException("Bad version, must be 13.");
+            String endpoint = headers.endpoint;
+            if (endpoint == null) throw new IllegalArgumentException("Missing endpoint.");
+
+            handler = handlerLookup.apply(endpoint);
+            if (handler == null) throw new FileNotFoundException("Unknown endpoint: " + endpoint);
+
+            handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort)));
 
             String key = headers.key();
             String responseKey = createResponseKey(key);
 
-            sendHandshakeRespose(responseKey);
+            sendHandshakeResponse(responseKey);
 
             List<Frame> frameBatch = new ArrayList<>();
             while (true) {
@@ -91,7 +145,7 @@ public class TinyWS {
         private void handleBatch(List<Frame> frameBatch) throws IOException {
             Frame firstFrame = frameBatch.get(0);
 
-            if (firstFrame.opCode == 0) throw new IOException("Continuation frame with nothing to continue");
+            if (firstFrame.opCode == 0) throw WebSocketError.protocolError();
 
             Frame lastOne = frameBatch.get(frameBatch.size() - 1);
             if (!lastOne.isFin) return;
@@ -102,7 +156,7 @@ public class TinyWS {
                     handleResultFrame(lastOne);
                     return;
                 } else if (lastOne.opCode > 0) {
-                    throw new IOException("Continuation frame must have opcode 0");
+                    throw WebSocketError.protocolError();
                 }
             }
 
@@ -129,48 +183,60 @@ public class TinyWS {
             switch (result.opCode) {
                 case 1:
                     String data = payloadCoder.decode(result.payloadData);
-
-                    // Echo
-                    frameWriter.writeTextFrame(data);
-
+                    handlerExecutor.accept(handler, h -> h.onTextMessage(data));
                     break;
                 case 2:
-                    // Echo
-                    frameWriter.writeBinaryFrame(result.payloadData);
+                    handlerExecutor.accept(handler, h -> h.onBinaryData(result.payloadData));
                     break;
                 case 8:
                     CloseData cd = result.toCloseData(payloadCoder);
 
-                    if (cd.hasInvalidCode()) throw new ProtocolError();
+                    if (cd.hasInvalidCode()) throw WebSocketError.protocolError();
 
                     // 1000 is normal close
                     int i = cd.code != null ? cd.code : 1000;
                     throw new WebSocketError(i, "");
                 case 9:
-                    // Pong
+                    // Ping, send pong!
                     frameWriter.writePongFrame(result.payloadData);
                     break;
                 case 10:
                     // Pong is ignored
                     break;
                 default:
-                    throw new ProtocolError();
+                    System.out.println("wrong opcode: " + result.opCode);
+                    throw WebSocketError.protocolError();
 
             }
         }
 
         private void outputLine(PrintWriter writer, String data) {
-//            System.out.println("==> " + data);
             writer.print(data);
             writer.print("\r\n");
         }
 
-        private void sendHandshakeRespose(String responseKey) {
+        private void sendHandshakeResponse(String responseKey) {
+            Map<String, String> headers = new HashMap<String, String>() {{
+                put("Upgrade", "websocket");
+                put("Connection", "upgrade");
+                put("Sec-WebSocket-Accept", responseKey);
+            }};
+            sendResponse(101, "Switching Protocols", headers);
+        }
+
+        private void sendBadRequestResponse() {
+            sendResponse(400, "Bad Request", Collections.emptyMap());
+        }
+        private void sendNotFoundResponse() {
+            sendResponse(404, "Not Found", Collections.emptyMap());
+        }
+
+        private void sendResponse(int statusCode, String reason, Map<String, String> headers) {
             PrintWriter writer = new PrintWriter(out, false);
-            outputLine(writer, "HTTP/1.1 101 Switching Protocols");
-            outputLine(writer, "Upgrade: websocket");
-            outputLine(writer, "Connection: Upgrade");
-            outputLine(writer, "Sec-WebSocket-Accept: " + responseKey);
+            outputLine(writer, "HTTP/1.1 " + statusCode + " " + reason);
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                outputLine(writer, entry.getKey() + ": " + entry.getValue());
+            }
             outputLine(writer, "");
             writer.flush();
             // Note: Do NOT close the writer, as the stream must remain open
@@ -234,26 +300,21 @@ public class TinyWS {
             int firstByte = readUnsignedByte(in);
             boolean isFin = (firstByte & 128) == 128;
             boolean hasZeroReserved = (firstByte & 112) == 0;
-            if (!hasZeroReserved) throw new ProtocolError();
+            if (!hasZeroReserved) throw WebSocketError.protocolError();
             int opCode = (firstByte & 15);
             boolean isControlFrame = (opCode & 8) == 8;
             int secondByte = readUnsignedByte(in);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
-            if (isControlFrame) {
-                if (len > 125) throw new ProtocolError();
-                if (!isFin) throw new ProtocolError();
-            }
+            if (isControlFrame && (!isFin || len > 125)) throw WebSocketError.protocolError();
             if (len == 126) {
                 // 2 bytes of extended len
-                byte[] extLen = readBytes(in, 2);
-                long tmp = toLong(extLen);
+                long tmp = toLong(readBytes(in, 2));
                 len = (int) tmp;
             } else if (len == 127) {
                 // 8 bytes of extended len
-                byte[] extLen = readBytes(in, 8);
-                long tmp = toLong(extLen);
-                if (tmp > Integer.MAX_VALUE) throw new ProtocolError();
+                long tmp = toLong(readBytes(in, 8));
+                if (tmp > Integer.MAX_VALUE) throw WebSocketError.protocolError();
                 len = (int) tmp;
             }
             byte[] maskingKey = isMasked ? readBytes(in, 4) : null;
@@ -273,7 +334,7 @@ public class TinyWS {
 
         CloseData toCloseData(PayloadCoder payloadCoder) throws WebSocketError {
             if (opCode != 8) throw new IllegalStateException("Not a close frame: " + opCode);
-            if (payloadData.length == 0) return new CloseData(null, null);
+            if (payloadData.length < 2) return new CloseData(null, null);
             int code = (int) toLong(payloadData, 0, 2);
             String reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
             return new CloseData(code, reason);
@@ -299,13 +360,23 @@ public class TinyWS {
 
     private static class Headers {
         private final Map<String, String> headers;
+        final String endpoint;
 
-        private Headers(Map<String, String> headers) {
+        private Headers(Map<String, String> headers, String endpoint) {
             this.headers = headers;
+            this.endpoint = endpoint;
         }
 
         boolean isProperUpgrade() {
             return "websocket".equalsIgnoreCase(headers.get("Upgrade")) && "Upgrade".equalsIgnoreCase(headers.get("Connection"));
+        }
+        int version() {
+            String versionStr = headers.get("Sec-WebSocket-Version");
+            try {
+                return Integer.parseInt(versionStr);
+            } catch (Exception ignore) {
+                return 0;
+            }
         }
 
         String key() {
@@ -316,15 +387,20 @@ public class TinyWS {
 
         static Headers read(InputStream in) throws IOException {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            String inputLine;
+            String inputLine, endpoint = null;
             Map<String, String> headers = new HashMap<>();
             while (!"".equals((inputLine = reader.readLine()))) {
+                if (inputLine.startsWith("GET ")) {
+                    String[] parts = inputLine.split(" ", 3);
+                    if (parts.length != 3) throw new IOException("Unexpected GET line: " + inputLine);
+                    endpoint = parts[1];
+                }
+
                 String[] keyValue = inputLine.split(":", 2);
-                // Ignore the initial GET line here. TODO: Don't!
                 if (keyValue.length == 2) headers.put(keyValue[0], keyValue[1].trim());
             }
             // Note: Do NOT close the reader, because the stream must remain open!
-            return new Headers(headers);
+            return new Headers(headers, endpoint);
         }
     }
 
@@ -341,20 +417,28 @@ public class TinyWS {
             return decode(bytes, 0, bytes.length);
         }
 
-        String decode(byte[] bytes, int offset, int len) throws WebSocketError {
+        /**
+         * Decodes the given byte data as UTF-8 and returns the result as a string.
+         *
+         * @param bytes the byte array
+         * @param offset offset into the array where to start decoding
+         * @param len length of data to decode
+         * @return the decoded string
+         * @throws WebSocketError (1007) thrown if the data are not valid UTF-8
+         */
+        synchronized String decode(byte[] bytes, int offset, int len) throws WebSocketError {
             decoder.reset();
             try {
                 CharBuffer buf = decoder.decode(ByteBuffer.wrap(bytes, offset, len));
                 return buf.toString();
             } catch (Exception ex) {
-                throw new InvalidFramePayloadData();
+                throw WebSocketError.invalidFramePayloadData();
             }
         }
 
         byte[] encode(String s) {
             return s.getBytes(charset);
         }
-
     }
 
     static class WebSocketError extends IOException {
@@ -365,15 +449,12 @@ public class TinyWS {
             this.code = code;
             this.reason = reason;
         }
-    }
-    static class ProtocolError extends WebSocketError {
-        ProtocolError() {
-            super(1002, "Protocol error");
+
+        static WebSocketError protocolError() {
+            return new WebSocketError(1002, "Protocol error");
         }
-    }
-    static class InvalidFramePayloadData extends WebSocketError {
-        InvalidFramePayloadData() {
-            super(1007, "Invalid frame payload data");
+        static WebSocketError invalidFramePayloadData() {
+            return new WebSocketError(1007, "Invalid frame payload data");
         }
     }
 
@@ -408,7 +489,15 @@ public class TinyWS {
             writeFrame(10, data);
         }
 
-        void writeFrame(int opCode, byte[] data) throws IOException {
+        /**
+         * Writes a frame to the output stream. Since FrameWriter is handed out to potentially different threads,
+         * this method is synchronized.
+         *
+         * @param opCode the opcode of the frame
+         * @param data frame data
+         * @throws IOException thrown if writing to the socket fails
+         */
+        synchronized void writeFrame(int opCode, byte[] data) throws IOException {
             int firstByte = 128 | opCode; // FIN + opCode
             int dataLen = data.length;
             int secondByte;
@@ -432,6 +521,30 @@ public class TinyWS {
         }
     }
 
+    private static class WebSocketClientImpl implements WebSocketClient {
+
+        private final FrameWriter writer;
+        private final Runnable closeCallback;
+
+        WebSocketClientImpl(FrameWriter writer, Runnable closeCallback) {
+            this.writer = writer;
+            this.closeCallback = closeCallback;
+        }
+
+        public void close(int code, String reason) throws IOException {
+            writer.writeCloseFrame(code, reason);
+            closeCallback.run();
+        }
+
+        public void sendTextMessage(String text) throws IOException {
+            writer.writeTextFrame(text);
+        }
+
+        public void sendBinaryData(byte[] data) throws IOException {
+            writer.writeBinaryFrame(data);
+        }
+    }
+
     static byte[] numberToBytes(int number, int len) {
         byte[] array = new byte[len];
         // Start from the end (network byte order), assume array is filled with zeros.
@@ -447,5 +560,52 @@ public class TinyWS {
         byte[] rawBytes = (key + HANDSHAKE_GUID).getBytes();
         byte[] result = sha1.digest(rawBytes);
         return Base64.getEncoder().encodeToString(result);
+    }
+
+    private static void doIgnoringExceptions(RunnableThatThrows runnable) {
+        try {
+            runnable.run();
+        } catch (Exception ex) {
+            // ignore
+        }
+    }
+    private interface RunnableThatThrows {
+        void run() throws Exception;
+    }
+
+    public static class Options {
+        Integer backlog;
+        int port;
+        private Options(int port) {
+            this.port = port;
+        }
+        public static Options withPort(int port) {
+            return new Options(port);
+        }
+        public Options withBacklog(int backlog) {
+            if (backlog < 0) throw new IllegalArgumentException("Backlog must be >= 0");
+            this.backlog = backlog;
+            return this;
+        }
+    }
+
+    public interface WebSocketClient {
+        void close(int code, String reason) throws IOException;
+
+        void sendTextMessage(String text) throws IOException;
+
+        void sendBinaryData(byte[] data) throws IOException;
+
+        // TODO: Get user-agent, query string params
+    }
+
+    public interface WebSocketHandler {
+        void onOpened(WebSocketClient client);
+
+        void onClosedByClient(int code, String reason);
+
+        void onTextMessage(String text);
+
+        void onBinaryData(byte[] data);
     }
 }
