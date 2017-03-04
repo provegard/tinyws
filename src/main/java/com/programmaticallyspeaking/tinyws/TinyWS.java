@@ -34,6 +34,7 @@ public class TinyWS {
         private final OutputStream out;
         private final InputStream in;
         private final PayloadCoder payloadCoder;
+        private final FrameWriter frameWriter;
 
         ClientHandler(Socket clientSocket) throws IOException {
             this.clientSocket = clientSocket;
@@ -42,6 +43,7 @@ public class TinyWS {
 
             // Not thread-safe but we're in a single thread!
             payloadCoder = new PayloadCoder();
+            frameWriter = new FrameWriter(out, payloadCoder);
         }
 
         @Override
@@ -50,7 +52,7 @@ public class TinyWS {
                 communicate();
             } catch (WebSocketError ex) {
                 try {
-                    writeBytes(frameDataForCloseFrame(payloadCoder, ex.code, ex.reason));
+                    frameWriter.writeCloseFrame(ex.code, ex.reason);
                 } catch (IOException e) {
                     // Ignored...
                 }
@@ -129,12 +131,12 @@ public class TinyWS {
                     String data = payloadCoder.decode(result.payloadData);
 
                     // Echo
-                    writeBytes(frameDataForTextFrame(payloadCoder, data));
+                    frameWriter.writeTextFrame(data);
 
                     break;
                 case 2:
                     // Echo
-                    writeBytes(frameDataForBinaryFrame(result.payloadData));
+                    frameWriter.writeBinaryFrame(result.payloadData);
                     break;
                 case 8:
                     CloseData cd = result.toCloseData(payloadCoder);
@@ -146,7 +148,7 @@ public class TinyWS {
                     throw new WebSocketError(i, "");
                 case 9:
                     // Pong
-                    writeBytes(frameDataForPongFrame(result.payloadData));
+                    frameWriter.writePongFrame(result.payloadData);
                     break;
                 case 10:
                     // Pong is ignored
@@ -155,11 +157,6 @@ public class TinyWS {
                     throw new ProtocolError();
 
             }
-        }
-
-        private void writeBytes(byte[] bytes) throws IOException {
-//            System.out.println("Writing " + bytes.length + " bytes ...");
-            out.write(bytes);
         }
 
         private void outputLine(PrintWriter writer, String data) {
@@ -177,60 +174,6 @@ public class TinyWS {
             outputLine(writer, "");
             writer.flush();
             // Note: Do NOT close the writer, as the stream must remain open
-        }
-    }
-
-    static byte[] frameDataForCloseFrame(PayloadCoder payloadCoder, int code, String reason) {
-        byte[] s = payloadCoder.encode(reason);
-        byte[] bytes = new byte[s.length + 2];
-        bytes[0] = (byte) ((code & 0xff00) >> 8);
-        bytes[1] = (byte) (code & 0xff);
-        System.arraycopy(s, 0, bytes, 2, s.length);
-        return frameDataFor(8, bytes);
-    }
-
-    static byte[] frameDataForTextFrame(PayloadCoder payloadCoder, String text) {
-        byte[] s = payloadCoder.encode(text);
-        return frameDataFor(1, s);
-    }
-
-    static byte[] frameDataForBinaryFrame(byte[] data) {
-        return frameDataFor(2, data);
-    }
-
-    static byte[] frameDataForPongFrame(byte[] data) {
-        return frameDataFor(10, data);
-    }
-
-    static byte[] frameDataFor(int opCode, byte[] data) {
-        int firstByte = 128 | opCode; // FIN + opCode
-        int dataLen = data.length;
-        int secondByte;
-        int extraLengthBytes = 0;
-        if (dataLen < 126) {
-            secondByte = dataLen; // no masking
-        } else if (dataLen < 65536) {
-            secondByte = 126;
-            extraLengthBytes = 2;
-        } else {
-            secondByte = 127;
-            extraLengthBytes = 8;
-        }
-        byte[] result = new byte[2 + extraLengthBytes + dataLen];
-        result[0] = (byte) firstByte;
-        result[1] = (byte) secondByte;
-        if (extraLengthBytes > 0) {
-            writeNumberInArray(data.length, result, 2, extraLengthBytes);
-        }
-        System.arraycopy(data, 0, result, 2 + extraLengthBytes, data.length);
-        return result;
-    }
-
-    private static void writeNumberInArray(int number, byte[] array, int offset, int len) {
-        // Start from the end (network byte order), assume array is filled with zeros.
-        for (int i = offset + len - 1; i >= offset; i--) {
-            array[i] = (byte) (number & 0xff);
-            number = number >> 8;
         }
     }
 
@@ -272,12 +215,6 @@ public class TinyWS {
                 offs += readLen;
             }
             if (totalRead != len) throw new IOException("Expected to read " + len + " bytes but read " + totalRead);
-////            if (readLen < buf.length) throw new IOException("Too few bytes read, expected " + buf.length + " but got " + readLen);
-//            if (readLen < buf.length) {
-//                byte[] tmp = new byte[readLen];
-//                System.arraycopy(buf, 0, tmp, 0, readLen);
-//                return tmp;
-//            }
             return buf;
         }
 
@@ -297,17 +234,16 @@ public class TinyWS {
             int firstByte = readUnsignedByte(in);
             boolean isFin = (firstByte & 128) == 128;
             boolean hasZeroReserved = (firstByte & 112) == 0;
-            if (!hasZeroReserved) throw new IllegalArgumentException("Reserved frame bytes 2-4 must be zero.");
+            if (!hasZeroReserved) throw new ProtocolError();
             int opCode = (firstByte & 15);
             boolean isControlFrame = (opCode & 8) == 8;
             int secondByte = readUnsignedByte(in);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
             if (isControlFrame) {
-                if (len > 125) throw new IOException("Control frame length exceeded"); //TODO: Protocol Error!
-                if (!isFin) throw new IOException("Control frame cannot be fragmented"); //TODO: Protocol Error!
+                if (len > 125) throw new ProtocolError();
+                if (!isFin) throw new ProtocolError();
             }
-            // TODO: Control frame + non-FIN
             if (len == 126) {
                 // 2 bytes of extended len
                 byte[] extLen = readBytes(in, 2);
@@ -317,7 +253,7 @@ public class TinyWS {
                 // 8 bytes of extended len
                 byte[] extLen = readBytes(in, 8);
                 long tmp = toLong(extLen);
-                if (tmp > Integer.MAX_VALUE) throw new IllegalArgumentException("Frame too long: " + tmp);
+                if (tmp > Integer.MAX_VALUE) throw new ProtocolError();
                 len = (int) tmp;
             }
             byte[] maskingKey = isMasked ? readBytes(in, 4) : null;
@@ -450,6 +386,71 @@ public class TinyWS {
     static class NormalClosure extends WebSocketError {
         NormalClosure() {
             super(1000, "Normal closure");
+        }
+    }
+
+    static class FrameWriter {
+        private final OutputStream out;
+        private final PayloadCoder payloadCoder;
+
+        FrameWriter(OutputStream out, PayloadCoder payloadCoder) {
+            this.out = out;
+            this.payloadCoder = payloadCoder;
+        }
+
+        void writeCloseFrame(int code, String reason) throws IOException {
+            byte[] s = payloadCoder.encode(reason);
+            byte[] numBytes = numberToBytes(code, 2);
+            byte[] combined = new byte[numBytes.length + s.length];
+            System.arraycopy(numBytes, 0, combined, 0, 2);
+            System.arraycopy(s, 0, combined, 2, s.length);
+            writeFrame(8, combined);
+        }
+
+        void writeTextFrame(String text) throws IOException {
+            byte[] s = payloadCoder.encode(text);
+            writeFrame(1, s);
+        }
+
+        void writeBinaryFrame(byte[] data) throws IOException {
+            writeFrame(2, data);
+        }
+
+        void writePongFrame(byte[] data) throws IOException {
+            writeFrame(10, data);
+        }
+
+        void writeFrame(int opCode, byte[] data) throws IOException {
+            int firstByte = 128 | opCode; // FIN + opCode
+            int dataLen = data.length;
+            int secondByte;
+            int extraLengthBytes = 0;
+            if (dataLen < 126) {
+                secondByte = dataLen; // no masking
+            } else if (dataLen < 65536) {
+                secondByte = 126;
+                extraLengthBytes = 2;
+            } else {
+                secondByte = 127;
+                extraLengthBytes = 8;
+            }
+            out.write(firstByte);
+            out.write(secondByte);
+            if (extraLengthBytes > 0) {
+                out.write(numberToBytes(data.length, extraLengthBytes));
+            }
+            out.write(data);
+            out.flush();
+        }
+
+        byte[] numberToBytes(int number, int len) {
+            byte[] array = new byte[len];
+            // Start from the end (network byte order), assume array is filled with zeros.
+            for (int i = len - 1; i >= 0; i--) {
+                array[i] = (byte) (number & 0xff);
+                number = number >> 8;
+            }
+            return array;
         }
     }
 }
