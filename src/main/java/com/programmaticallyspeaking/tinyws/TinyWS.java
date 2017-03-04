@@ -9,6 +9,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -35,7 +36,7 @@ public class TinyWS {
         private final Socket clientSocket;
         private final OutputStream out;
         private final InputStream in;
-        private final CharsetDecoder decoder;
+        private final UTF8Coder utf8Coder;
 
         ClientHandler(Socket clientSocket) throws IOException {
             this.clientSocket = clientSocket;
@@ -43,7 +44,7 @@ public class TinyWS {
             in = clientSocket.getInputStream();
 
             // Not thread-safe but we're in a single thread!
-            decoder = Charset.forName("UTF-8").newDecoder();
+            utf8Coder = new UTF8Coder();
         }
 
         @Override
@@ -130,11 +131,11 @@ public class TinyWS {
                 case 1:
                     System.out.println("* Text frame");
                     // TODO: Fail if not valid UTF-8!!
-                    String data = toUTF8String(result.payloadData);
+                    String data = utf8Coder.toUTF8String(result.payloadData);
                     System.out.println("DATA: " + data);
 
                     // Echo
-                    writeBytes(frameDataForTextFrame(data));
+                    writeBytes(frameDataForTextFrame(utf8Coder, data));
 
                     break;
                 case 2:
@@ -144,11 +145,12 @@ public class TinyWS {
                     break;
                 case 8:
                     System.out.println("* Connection close frame");
-                    CloseData cd = result.toCloseData();
+                    CloseData cd = result.toCloseData(utf8Coder);
                     System.out.println(cd);
 
-                    Integer i = cd.code != null ? cd.code : 0;
-                    writeBytes(frameDataForCloseFrame(i.intValue(), ""));
+                    // 1000 is normal close
+                    int i = cd.code != null ? cd.code : 1000;
+                    writeBytes(frameDataForCloseFrame(utf8Coder, i, ""));
 
                     // TODO:
                     // If an endpoint receives a Close frame and did not previously send a
@@ -193,19 +195,10 @@ public class TinyWS {
             writer.flush();
             // Note: Do NOT close the writer, as the stream must remain open
         }
-
-        private String toUTF8String(byte[] bytes) throws CharacterCodingException {
-            return toUTF8String(bytes, 0, bytes.length);
-        }
-        private String toUTF8String(byte[] bytes, int offset, int len) throws CharacterCodingException {
-            decoder.reset();
-            CharBuffer buf = decoder.decode(ByteBuffer.wrap(bytes, offset, len));
-            return buf.toString();
-        }
     }
 
-    static byte[] frameDataForCloseFrame(int code, String reason) {
-        byte[] s = utf8StringToBytes(reason);
+    static byte[] frameDataForCloseFrame(UTF8Coder utf8Coder, int code, String reason) throws CharacterCodingException {
+        byte[] s = utf8Coder.fromUTF8String(reason);
         byte[] bytes = new byte[s.length + 2];
         bytes[0] = (byte) ((code & 0xff00) >> 8);
         bytes[1] = (byte) (code & 0xff);
@@ -213,8 +206,8 @@ public class TinyWS {
         return frameDataFor(8, bytes);
     }
 
-    static byte[] frameDataForTextFrame(String text) {
-        byte[] s = utf8StringToBytes(text);
+    static byte[] frameDataForTextFrame(UTF8Coder utf8Coder, String text) throws CharacterCodingException {
+        byte[] s = utf8Coder.fromUTF8String(text);
         return frameDataFor(1, s);
     }
 
@@ -372,11 +365,11 @@ public class TinyWS {
             return bytes;
         }
 
-        CloseData toCloseData() {
+        CloseData toCloseData(UTF8Coder utf8Coder) throws CharacterCodingException {
             if (opCode != 8) throw new IllegalStateException("Not a close frame: " + opCode);
             if (payloadData.length == 0) return new CloseData(null, null);
             int code = (int) toLong(payloadData, 0, 2);
-            String reason = payloadData.length > 2 ? toUtf8String(payloadData, 2, payloadData.length - 2) : null;
+            String reason = payloadData.length > 2 ? utf8Coder.toUTF8String(payloadData, 2, payloadData.length - 2) : null;
             return new CloseData(code, reason);
         }
     }
@@ -442,23 +435,28 @@ public class TinyWS {
         return Base64.getEncoder().encodeToString(result);
     }
 
-    // TODO: Remove!
-    static String toUtf8String(byte[] data) {
-        return toUtf8String(data, 0, data.length);
-    }
-    // TODO: Remove!
-    static String toUtf8String(byte[] data, int offset, int len) {
-        try {
-            return new String(data, offset, len, "utf-8");
-        } catch (UnsupportedEncodingException e) {
-            return "???" + e.getMessage();
+    static class UTF8Coder {
+        private final Charset charset;
+        private final CharsetDecoder decoder;
+
+        UTF8Coder() {
+            charset = Charset.forName("UTF-8");
+            decoder = charset.newDecoder();
         }
-    }
-    static byte[] utf8StringToBytes(String s) {
-        try {
-            return s.getBytes("utf-8");
-        } catch (UnsupportedEncodingException e) {
-            return new byte[0]; // ???
+
+        String toUTF8String(byte[] bytes) throws CharacterCodingException {
+            return toUTF8String(bytes, 0, bytes.length);
         }
+
+        String toUTF8String(byte[] bytes, int offset, int len) throws CharacterCodingException {
+            decoder.reset();
+            CharBuffer buf = decoder.decode(ByteBuffer.wrap(bytes, offset, len));
+            return buf.toString();
+        }
+
+        byte[] fromUTF8String(String s) {
+            return s.getBytes(charset);
+        }
+
     }
 }
