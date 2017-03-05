@@ -390,7 +390,8 @@ public class TinyWS {
 
         CloseData toCloseData(PayloadCoder payloadCoder) throws WebSocketError {
             if (opCode != 8) throw new IllegalStateException("Not a close frame: " + opCode);
-            if (payloadData.length < 2) return new CloseData(null, null);
+            if (payloadData.length == 0) return new CloseData(null, null);
+            if (payloadData.length == 1) throw WebSocketError.protocolError("Invalid close frame payload length (1).");
             int code = (int) toLong(payloadData, 0, 2);
             String reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
             return new CloseData(code, reason);
