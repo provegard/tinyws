@@ -33,6 +33,11 @@ public class EchoServer {
         }
 
         @Override
+        public void onFailure(Throwable t) {
+            t.printStackTrace(System.err);
+        }
+
+        @Override
         public void onTextMessage(String text) {
             try {
                 client.sendTextMessage(text);

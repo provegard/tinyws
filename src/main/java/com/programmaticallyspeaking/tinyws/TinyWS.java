@@ -22,6 +22,8 @@ public class TinyWS {
     private final ThreadFactory threadFactory;
     private final Executor handlerExecutor;
     private final Options options;
+    private final Logger logger;
+
     private ServerSocket serverSocket;
     private Map<String, WebSocketHandler> handlers = new HashMap<>();
 
@@ -29,6 +31,15 @@ public class TinyWS {
         this.threadFactory = threadFactory;
         this.handlerExecutor = handlerExecutor;
         this.options = options;
+        this.logger = (level, message, error) -> {
+            if (options.logger != null) {
+                try {
+                    options.logger.log(level, message, error);
+                } catch (Exception ignore) {
+                    // ignore logging errors
+                }
+            }
+        };
     }
 
     public void addHandler(String endpoint, WebSocketHandler handler) {
@@ -50,8 +61,7 @@ public class TinyWS {
         try {
             serverSocket.close();
         } catch (IOException e) {
-            // ignored
-            // TODO: Pass to error handler !?
+            logger.log(LogLevel.WARN, "Failed to close server socket.", e);
         }
         serverSocket = null;
     }
@@ -62,13 +72,13 @@ public class TinyWS {
                 Socket clientSocket = serverSocket.accept();
                 Thread t = threadFactory.newThread(new ClientHandler(clientSocket, handlers::get, (handler, fun) -> {
                     if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
-                }));
+                }, logger));
                 t.start();
             }
-        } catch (SocketException ignore) {
-            // Socket was closed
+        } catch (SocketException e) {
+            logger.log(LogLevel.DEBUG, "Server socket was closed, probably because the server was stopped.", e);
         } catch (Exception ex) {
-            // TODO: Pass to error handler !?
+            logger.log(LogLevel.ERROR, "Error accepting a client socket.", ex);
         }
     }
 
@@ -79,16 +89,19 @@ public class TinyWS {
         private final InputStream in;
         private final Function<String, WebSocketHandler> handlerLookup;
         private final BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor;
+        private final Logger logger;
         private final PayloadCoder payloadCoder;
         private final FrameWriter frameWriter;
         private WebSocketHandler handler;
+        private volatile boolean isClosed; // potentially set from handler thread
 
-        ClientHandler(Socket clientSocket, Function<String, WebSocketHandler> handlerLookup, BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor) throws IOException {
+        ClientHandler(Socket clientSocket, Function<String, WebSocketHandler> handlerLookup, BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor, Logger logger) throws IOException {
             this.clientSocket = clientSocket;
             out = clientSocket.getOutputStream();
             in = clientSocket.getInputStream();
             this.handlerLookup = handlerLookup;
             this.handlerExecutor = handlerExecutor;
+            this.logger = logger;
 
             payloadCoder = new PayloadCoder();
             frameWriter = new FrameWriter(out, payloadCoder);
@@ -99,7 +112,7 @@ public class TinyWS {
             try {
                 communicate();
             } catch (WebSocketError ex) {
-                System.out.println(ex);
+                if (ex.debugDetails != null) logger.log(LogLevel.DEBUG, "Closing because: " + ex.debugDetails, null);
                 doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
                 handlerExecutor.accept(handler, h -> h.onClosedByClient(ex.code, ex.reason));
             } catch (IllegalArgumentException ex) {
@@ -107,15 +120,21 @@ public class TinyWS {
             } catch (FileNotFoundException ex) {
                 sendNotFoundResponse();
             } catch (SocketException ex) {
-                System.err.println(ex.getMessage());
+                if (!isClosed) {
+                    logger.log(LogLevel.ERROR, "Client socket error.", ex);
+                    handlerExecutor.accept(handler, h -> h.onFailure(ex));
+                }
             } catch (Exception ex) {
-                ex.printStackTrace(System.err);
+                logger.log(LogLevel.ERROR, "Client communication error.", ex);
+                handlerExecutor.accept(handler, h -> h.onFailure(ex));
             }
             abort();
         }
 
         private void abort() {
+            if (isClosed) return;
             doIgnoringExceptions(clientSocket::close);
+            isClosed = true;
         }
 
         private void communicate() throws IOException, NoSuchAlgorithmException {
@@ -145,7 +164,7 @@ public class TinyWS {
         private void handleBatch(List<Frame> frameBatch) throws IOException {
             Frame firstFrame = frameBatch.get(0);
 
-            if (firstFrame.opCode == 0) throw WebSocketError.protocolError();
+            if (firstFrame.opCode == 0) throw WebSocketError.protocolError("Continuation frame with nothing to continue.");
 
             Frame lastOne = frameBatch.get(frameBatch.size() - 1);
             if (!lastOne.isFin) return;
@@ -156,7 +175,7 @@ public class TinyWS {
                     handleResultFrame(lastOne);
                     return;
                 } else if (lastOne.opCode > 0) {
-                    throw WebSocketError.protocolError();
+                    throw WebSocketError.protocolError("Continuation frame must have opcode 0.");
                 }
             }
 
@@ -191,11 +210,11 @@ public class TinyWS {
                 case 8:
                     CloseData cd = result.toCloseData(payloadCoder);
 
-                    if (cd.hasInvalidCode()) throw WebSocketError.protocolError();
+                    if (cd.hasInvalidCode()) throw WebSocketError.protocolError("Invalid close frame code: " + cd.code);
 
                     // 1000 is normal close
                     int i = cd.code != null ? cd.code : 1000;
-                    throw new WebSocketError(i, "");
+                    throw new WebSocketError(i, "", null);
                 case 9:
                     // Ping, send pong!
                     frameWriter.writePongFrame(result.payloadData);
@@ -204,8 +223,7 @@ public class TinyWS {
                     // Pong is ignored
                     break;
                 default:
-                    System.out.println("wrong opcode: " + result.opCode);
-                    throw WebSocketError.protocolError();
+                    throw WebSocketError.protocolError("Invalid opcode: " + result.opCode);
 
             }
         }
@@ -300,13 +318,16 @@ public class TinyWS {
             int firstByte = readUnsignedByte(in);
             boolean isFin = (firstByte & 128) == 128;
             boolean hasZeroReserved = (firstByte & 112) == 0;
-            if (!hasZeroReserved) throw WebSocketError.protocolError();
+            if (!hasZeroReserved) throw WebSocketError.protocolError("Non-zero reserved bits in 1st byte: " + (firstByte & 112));
             int opCode = (firstByte & 15);
             boolean isControlFrame = (opCode & 8) == 8;
             int secondByte = readUnsignedByte(in);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
-            if (isControlFrame && (!isFin || len > 125)) throw WebSocketError.protocolError();
+            if (isControlFrame) {
+                if (len > 125) throw WebSocketError.protocolError("Control frame length exceeding 125 bytes.");
+                if (!isFin) throw WebSocketError.protocolError("Fragmented control frame.");
+            }
             if (len == 126) {
                 // 2 bytes of extended len
                 long tmp = toLong(readBytes(in, 2));
@@ -314,7 +335,7 @@ public class TinyWS {
             } else if (len == 127) {
                 // 8 bytes of extended len
                 long tmp = toLong(readBytes(in, 8));
-                if (tmp > Integer.MAX_VALUE) throw WebSocketError.protocolError();
+                if (tmp > Integer.MAX_VALUE) throw WebSocketError.protocolError("Frame length greater than 0x7fffffff not supported.");
                 len = (int) tmp;
             }
             byte[] maskingKey = isMasked ? readBytes(in, 4) : null;
@@ -444,17 +465,19 @@ public class TinyWS {
     static class WebSocketError extends IOException {
         final int code;
         final String reason;
+        final String debugDetails;
 
-        WebSocketError(int code, String reason) {
+        WebSocketError(int code, String reason, String debugDetails) {
             this.code = code;
             this.reason = reason;
+            this.debugDetails = debugDetails;
         }
 
-        static WebSocketError protocolError() {
-            return new WebSocketError(1002, "Protocol error");
+        static WebSocketError protocolError(String debugDetails) {
+            return new WebSocketError(1002, "Protocol error", debugDetails);
         }
         static WebSocketError invalidFramePayloadData() {
-            return new WebSocketError(1007, "Invalid frame payload data");
+            return new WebSocketError(1007, "Invalid frame payload data", null);
         }
     }
 
@@ -576,6 +599,8 @@ public class TinyWS {
     public static class Options {
         Integer backlog;
         int port;
+        Logger logger;
+
         private Options(int port) {
             this.port = port;
         }
@@ -587,6 +612,28 @@ public class TinyWS {
             this.backlog = backlog;
             return this;
         }
+        public Options withLogger(Logger logger) {
+            this.logger = logger;
+            return this;
+        }
+    }
+
+    public enum LogLevel {
+        TRACE(0),
+        DEBUG(10),
+        INFO(20),
+        WARN(50),
+        ERROR(100);
+
+        public final int level;
+
+        LogLevel(int level) {
+            this.level = level;
+        }
+    }
+
+    public interface Logger {
+        void log(LogLevel level, String message, Throwable error);
     }
 
     public interface WebSocketClient {
@@ -603,6 +650,8 @@ public class TinyWS {
         void onOpened(WebSocketClient client);
 
         void onClosedByClient(int code, String reason);
+
+        void onFailure(Throwable t);
 
         void onTextMessage(String text);
 
