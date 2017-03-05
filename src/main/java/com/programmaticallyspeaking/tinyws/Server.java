@@ -473,10 +473,14 @@ public class Server {
             return key;
         }
 
+        String userAgent() {
+            return headers.get("User-Agent");
+        }
+
         static Headers read(InputStream in) throws IOException {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
             String inputLine, endpoint = null;
-            Map<String, String> headers = new HashMap<>();
+            Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             boolean isFirstLine = true;
             while (!"".equals((inputLine = reader.readLine()))) {
                 if (isFirstLine) {

@@ -43,6 +43,7 @@ public class HeaderTests {
     public Object[][] version_data() {
         return new Object[][] {
             { "Proper", "Sec-WebSocket-Version: 13\r\n", 13 },
+            { "Case insensitive", "sec-websocket-version: 13\r\n", 13 },
             { "Invalid", "Sec-WebSocket-Version: foo\r\n", 0 },
             { "Missing", "", 0 }
         };
@@ -52,5 +53,20 @@ public class HeaderTests {
     public void WebSocket_version_should_be_extracted(String desc, String header, int expected) throws IOException {
         Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
         assertEquals(headers.version(), expected);
+    }
+
+    @DataProvider
+    public Object[][] userAgent_data() {
+        return new Object[][] {
+            { "Proper", "User-Agent: foobar\r\n", "foobar" },
+            { "Case insensitive", "user-agent: foobar\r\n", "foobar" },
+            { "Missing", "", null }
+        };
+    }
+
+    @Test(dataProvider = "userAgent_data")
+    public void User_agent_should_be_extracted(String desc, String header, String expected) throws IOException {
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
+        assertEquals(headers.userAgent(), expected);
     }
 }
