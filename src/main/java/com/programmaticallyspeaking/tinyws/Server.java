@@ -129,11 +129,16 @@ public class Server {
             } catch (WebSocketError ex) {
                 if (logger.isEnabledAt(LogLevel.DEBUG)) {
                     String msg = String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
-                        ex.debugDetails != null ? (" because: " + ex.debugDetails) : "");
+                            ex.debugDetails != null ? (" because: " + ex.debugDetails) : "");
                     logger.log(LogLevel.DEBUG, msg, null);
                 }
                 doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
                 handlerExecutor.accept(handler, h -> h.onClosedByClient(ex.code, ex.reason));
+            } catch (MethodNotAllowedException ex) {
+                if (logger.isEnabledAt(LogLevel.WARN))
+                    logger.log(LogLevel.WARN, String.format("WebSocket client from %s used a non-allowed method: %s",
+                            clientSocket.getRemoteSocketAddress(), ex.method), null);
+                sendMethodNotAllowedResponse();
             } catch (IllegalArgumentException ex) {
                 if (logger.isEnabledAt(LogLevel.WARN))
                     logger.log(LogLevel.WARN, String.format("WebSocket client from %s sent a malformed request.",
@@ -167,7 +172,6 @@ public class Server {
             if (!headers.isProperUpgrade()) throw new IllegalArgumentException("Handshake has malformed upgrade.");
             if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
             String endpoint = headers.endpoint;
-            if (endpoint == null) throw new IllegalArgumentException("Missing endpoint.");
 
             handler = handlerLookup.apply(endpoint);
             if (handler == null) throw new FileNotFoundException("Unknown endpoint: " + endpoint);
@@ -283,6 +287,12 @@ public class Server {
                 put("Sec-WebSocket-Version", Integer.toString(SupportedVersion));
             }};
             sendResponse(400, "Bad Request", headers);
+        }
+        private void sendMethodNotAllowedResponse() {
+            Map<String, String> headers = new HashMap<String, String>() {{
+                put("Allow", "GET");
+            }};
+            sendResponse(405, "Method Not Allowed", headers);
         }
         private void sendNotFoundResponse() {
             sendResponse(404, "Not Found", Collections.emptyMap());
@@ -468,11 +478,14 @@ public class Server {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
             String inputLine, endpoint = null;
             Map<String, String> headers = new HashMap<>();
+            boolean isFirstLine = true;
             while (!"".equals((inputLine = reader.readLine()))) {
-                if (inputLine.startsWith("GET ")) {
+                if (isFirstLine) {
                     String[] parts = inputLine.split(" ", 3);
-                    if (parts.length != 3) throw new IOException("Unexpected GET line: " + inputLine);
+                    if (parts.length != 3) throw new IllegalArgumentException("Malformed 1st header line: " + inputLine);
+                    if (!"GET".equals(parts[0])) throw new MethodNotAllowedException(parts[0]);
                     endpoint = parts[1];
+                    isFirstLine = false;
                 }
 
                 String[] keyValue = inputLine.split(":", 2);
@@ -650,6 +663,13 @@ public class Server {
     }
     private interface RunnableThatThrows {
         void run() throws Exception;
+    }
+
+    static class MethodNotAllowedException extends IllegalArgumentException {
+        final String method;
+        public MethodNotAllowedException(String method) {
+            this.method = method;
+        }
     }
 
     public static class Options {
