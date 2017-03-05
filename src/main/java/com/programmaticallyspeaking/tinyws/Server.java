@@ -1,9 +1,7 @@
 package com.programmaticallyspeaking.tinyws;
 
 import java.io.*;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
@@ -450,11 +448,13 @@ public class Server {
         private final Map<String, String> headers;
         final String endpoint;
         final String query;
+        final String fragment;
 
-        private Headers(Map<String, String> headers, String endpoint, String query) {
+        private Headers(Map<String, String> headers, URI uri) {
             this.headers = headers;
-            this.endpoint = endpoint;
-            this.query = query;
+            this.endpoint = uri.getPath();
+            this.query = uri.getQuery();
+            this.fragment = uri.getFragment();
         }
 
         boolean isProperUpgrade() {
@@ -480,7 +480,8 @@ public class Server {
 
         static Headers read(InputStream in) throws IOException {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            String inputLine, endpoint = null, query = "";
+            String inputLine;
+            URI endpoint = null;
             Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             boolean isFirstLine = true;
             while (!"".equals((inputLine = reader.readLine()))) {
@@ -488,11 +489,10 @@ public class Server {
                     String[] parts = inputLine.split(" ", 3);
                     if (parts.length != 3) throw new IllegalArgumentException("Malformed 1st header line: " + inputLine);
                     if (!"GET".equals(parts[0])) throw new MethodNotAllowedException(parts[0]);
-                    endpoint = parts[1];
-                    int q = endpoint.indexOf('?');
-                    if (q >= 0) {
-                        query = endpoint.substring(q + 1);
-                        endpoint = endpoint.substring(0, q);
+                    try {
+                        endpoint = new URI("http://server" + parts[1]);
+                    } catch (URISyntaxException e) {
+                        throw new IllegalArgumentException("Invalid endpoint: " + parts[1]);
                     }
                     isFirstLine = false;
                 }
@@ -503,7 +503,7 @@ public class Server {
                 headers.put(keyValue[0], keyValue[1].trim());
             }
             // Note: Do NOT close the reader, because the stream must remain open!
-            return new Headers(headers, endpoint, query);
+            return new Headers(headers, endpoint);
         }
     }
 
@@ -646,17 +646,10 @@ public class Server {
             writer.writeBinaryFrame(data);
         }
 
-        public String userAgent() {
-            return headers.userAgent();
-        }
-
-        public String host() {
-            return headers.host();
-        }
-
-        public String queryAndFragment() {
-            return headers.query;
-        }
+        public String userAgent() { return headers.userAgent(); }
+        public String host() { return headers.host(); }
+        public String query() { return headers.query; }
+        public String fragment() { return headers.fragment; }
     }
 
     static byte[] numberToBytes(int number, int len) {
@@ -747,7 +740,8 @@ public class Server {
         String host();
 
         // https://tools.ietf.org/html/rfc3986#section-3
-        String queryAndFragment();
+        String query();
+        String fragment();
     }
 
     public interface WebSocketHandler {

@@ -87,22 +87,29 @@ public class HeaderTests {
     @DataProvider
     public Object[][] endpoint_data() {
         return new Object[][] {
-            { "Plain GET", "GET /foo HTTP/1.1\r\n\r\n", "/foo", "" },
-            { "Empty query", "GET /foo? HTTP/1.1\r\n\r\n", "/foo", "" },
-            { "GET with query", "GET /foo?bar=baz HTTP/1.1\r\n\r\n", "/foo", "bar=baz" },
-            { "Query and fragment", "GET /foo?bar#baz HTTP/1.1\r\n\r\n", "/foo", "bar#baz" }
+            { "Plain GET", "GET /foo HTTP/1.1\r\n\r\n", "/foo", null, null },
+            { "Pct-encoded path", "GET /foo%20bar HTTP/1.1\r\n\r\n", "/foo bar", null, null },
+            { "Empty query", "GET /foo? HTTP/1.1\r\n\r\n", "/foo", "", null },
+            { "GET with query", "GET /foo?bar=baz HTTP/1.1\r\n\r\n", "/foo", "bar=baz", null },
+            { "Query and fragment", "GET /foo?bar#baz HTTP/1.1\r\n\r\n", "/foo", "bar", "baz" }
         };
     }
 
     @Test(dataProvider = "endpoint_data")
-    public void Endpoint_should_be_extracted(String desc, String headers, String expected, String ignored) throws IOException {
+    public void Endpoint_should_be_extracted(String desc, String headers, String expected, String ignored, String ignored2) throws IOException {
         Headers h = Headers.read(streamFromString(headers));
         assertEquals(h.endpoint, expected);
     }
 
     @Test(dataProvider = "endpoint_data")
-    public void Querystring_should_be_extracted(String desc, String headers, String ignored, String expected) throws IOException {
+    public void Querystring_should_be_extracted(String desc, String headers, String ignored, String expected, String ignored2) throws IOException {
         Headers h = Headers.read(streamFromString(headers));
         assertEquals(h.query, expected);
+    }
+
+    @Test(dataProvider = "endpoint_data")
+    public void Fragment_should_be_extracted(String desc, String headers, String ignored, String ignored2, String expected) throws IOException {
+        Headers h = Headers.read(streamFromString(headers));
+        assertEquals(h.fragment, expected);
     }
 }
