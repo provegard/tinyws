@@ -11,9 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.Executor;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class Server {
@@ -86,10 +84,7 @@ public class Server {
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> wrappedHandlerExecutor = (handler, fun) -> {
-                    if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
-                };
-                mainExecutor.execute(new ClientHandler(clientSocket, handlers::get, wrappedHandlerExecutor));
+                mainExecutor.execute(new ClientHandler(clientSocket));
             }
         } catch (SocketException e) {
             logger.log(LogLevel.DEBUG, "Server socket was closed, probably because the server was stopped.", e);
@@ -103,22 +98,22 @@ public class Server {
         private final Socket clientSocket;
         private final OutputStream out;
         private final InputStream in;
-        private final Function<String, WebSocketHandler> handlerLookup;
-        private final BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor;
         private final PayloadCoder payloadCoder;
         private final FrameWriter frameWriter;
         private WebSocketHandler handler;
         private volatile boolean isClosed; // potentially set from handler thread
 
-        ClientHandler(Socket clientSocket, Function<String, WebSocketHandler> handlerLookup, BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor) throws IOException {
+        ClientHandler(Socket clientSocket) throws IOException {
             this.clientSocket = clientSocket;
             out = clientSocket.getOutputStream();
             in = clientSocket.getInputStream();
-            this.handlerLookup = handlerLookup;
-            this.handlerExecutor = handlerExecutor;
 
             payloadCoder = new PayloadCoder();
             frameWriter = new FrameWriter(out, payloadCoder);
+        }
+
+        private void invokeHandler(Consumer<WebSocketHandler> fun) {
+            if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
         }
 
         @Override
@@ -129,7 +124,7 @@ public class Server {
                 lazyLog(LogLevel.DEBUG, () -> String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
                         ex.debugDetails != null ? (" because: " + ex.debugDetails) : ""));
                 doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
-                handlerExecutor.accept(handler, h -> h.onClosedByClient(ex.code, ex.reason));
+                invokeHandler(h -> h.onClosedByClient(ex.code, ex.reason));
             } catch (MethodNotAllowedException ex) {
                 lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s used a non-allowed method: %s",
                             clientSocket.getRemoteSocketAddress(), ex.method));
@@ -145,11 +140,11 @@ public class Server {
             } catch (SocketException ex) {
                 if (!isClosed) {
                     logger.log(LogLevel.ERROR, "Client socket error.", ex);
-                    handlerExecutor.accept(handler, h -> h.onFailure(ex));
+                    invokeHandler(h -> h.onFailure(ex));
                 }
             } catch (Exception ex) {
                 logger.log(LogLevel.ERROR, "Client communication error.", ex);
-                handlerExecutor.accept(handler, h -> h.onFailure(ex));
+                invokeHandler(h -> h.onFailure(ex));
             }
             abort();
         }
@@ -166,13 +161,13 @@ public class Server {
             if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
             String endpoint = headers.endpoint;
 
-            handler = handlerLookup.apply(endpoint);
+            handler = handlers.get(endpoint);
             if (handler == null) throw new FileNotFoundException("Unknown endpoint: " + endpoint);
 
             lazyLog(LogLevel.INFO, () -> String.format("New WebSocket client from %s at endpoint '%s'.",
                         clientSocket.getRemoteSocketAddress(), endpoint));
 
-            handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort, headers)));
+            invokeHandler(h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort, headers)));
 
             String key = headers.key();
             if (key == null) throw new IllegalArgumentException("Missing Sec-WebSocket-Key in handshake.");
@@ -232,10 +227,10 @@ public class Server {
             switch (result.opCode) {
                 case 1:
                     String data = payloadCoder.decode(result.payloadData);
-                    handlerExecutor.accept(handler, h -> h.onTextMessage(data));
+                    invokeHandler(h -> h.onTextMessage(data));
                     break;
                 case 2:
-                    handlerExecutor.accept(handler, h -> h.onBinaryData(result.payloadData));
+                    invokeHandler(h -> h.onBinaryData(result.payloadData));
                     break;
                 case 8:
                     CloseData cd = result.toCloseData(payloadCoder);
