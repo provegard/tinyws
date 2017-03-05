@@ -22,7 +22,7 @@ public class EchoServer {
                 return true;
             }
         };
-        Server ws = new Server(Executors.defaultThreadFactory(), executor,
+        Server ws = new Server(executor, executor,
                 Server.Options.withPort(9001).withLogger(logger));
         ws.addHandler("/", new EchoHandler());
         try {

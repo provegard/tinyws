@@ -12,14 +12,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ThreadFactory;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class Server {
     private static final String HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    private final ThreadFactory threadFactory;
+    private final Executor mainExecutor;
     private final Executor handlerExecutor;
     private final Options options;
     private final Logger logger;
@@ -27,8 +26,8 @@ public class Server {
     private ServerSocket serverSocket;
     private Map<String, WebSocketHandler> handlers = new HashMap<>();
 
-    public Server(ThreadFactory threadFactory, Executor handlerExecutor, Options options) {
-        this.threadFactory = threadFactory;
+    public Server(Executor mainExecutor, Executor handlerExecutor, Options options) {
+        this.mainExecutor = mainExecutor;
         this.handlerExecutor = handlerExecutor;
         this.options = options;
         this.logger = new Logger() {
@@ -59,8 +58,7 @@ public class Server {
         serverSocket = backlog == null
             ? new ServerSocket(options.port)
             : new ServerSocket(options.port, backlog);
-        Thread acceptThread = threadFactory.newThread(this::acceptInLoop);
-        acceptThread.start();
+        mainExecutor.execute(this::acceptInLoop);
     }
 
     public void stop() {
@@ -81,10 +79,10 @@ public class Server {
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                Thread t = threadFactory.newThread(new ClientHandler(clientSocket, handlers::get, (handler, fun) -> {
+                BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> wrappedHandlerExecutor = (handler, fun) -> {
                     if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
-                }, logger));
-                t.start();
+                };
+                mainExecutor.execute(new ClientHandler(clientSocket, handlers::get, wrappedHandlerExecutor, logger));
             }
         } catch (SocketException e) {
             logger.log(LogLevel.DEBUG, "Server socket was closed, probably because the server was stopped.", e);
