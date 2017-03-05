@@ -653,6 +653,10 @@ public class Server {
         public String host() {
             return headers.host();
         }
+
+        public String queryAndFragment() {
+            return headers.query;
+        }
     }
 
     static byte[] numberToBytes(int number, int len) {
@@ -738,10 +742,12 @@ public class Server {
 
         void sendBinaryData(byte[] data) throws IOException;
 
-        // TODO: query string params
         String userAgent();
 
         String host();
+
+        // https://tools.ietf.org/html/rfc3986#section-3
+        String queryAndFragment();
     }
 
     public interface WebSocketHandler {
