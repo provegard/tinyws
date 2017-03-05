@@ -282,7 +282,7 @@ public class Server {
             Map<String, String> headers = new HashMap<String, String>() {{
                 put("Sec-WebSocket-Version", Integer.toString(SupportedVersion));
             }};
-            sendResponse(400, "Bad Request", Collections.emptyMap());
+            sendResponse(400, "Bad Request", headers);
         }
         private void sendNotFoundResponse() {
             sendResponse(404, "Not Found", Collections.emptyMap());
