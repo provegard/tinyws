@@ -642,6 +642,10 @@ public class Server {
         public String userAgent() {
             return headers.userAgent();
         }
+
+        public String host() {
+            return headers.host();
+        }
     }
 
     static byte[] numberToBytes(int number, int len) {
@@ -729,6 +733,8 @@ public class Server {
 
         // TODO: query string params
         String userAgent();
+
+        String host();
     }
 
     public interface WebSocketHandler {
