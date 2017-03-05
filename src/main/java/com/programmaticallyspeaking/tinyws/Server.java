@@ -14,6 +14,7 @@ import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class Server {
     public static final String ServerName = "TinyWS Server";
@@ -52,6 +53,10 @@ public class Server {
         };
     }
 
+    private void lazyLog(LogLevel level, Supplier<String> msgFun) {
+        if (logger.isEnabledAt(level)) logger.log(level, msgFun.get(), null);
+    }
+
     public void addHandler(String endpoint, WebSocketHandler handler) {
         if (serverSocket != null) throw new IllegalStateException("Please add handlers before starting the server.");
         handlers.put(endpoint, handler);
@@ -77,16 +82,14 @@ public class Server {
 
     private void acceptInLoop() {
         try {
-            if (logger.isEnabledAt(LogLevel.INFO))
-                logger.log(LogLevel.INFO, "Receiving WebSocket clients at " +
-                    serverSocket.getLocalSocketAddress(), null);
+            lazyLog(LogLevel.INFO, () -> "Receiving WebSocket clients at " + serverSocket.getLocalSocketAddress());
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> wrappedHandlerExecutor = (handler, fun) -> {
                     if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
                 };
-                mainExecutor.execute(new ClientHandler(clientSocket, handlers::get, wrappedHandlerExecutor, logger));
+                mainExecutor.execute(new ClientHandler(clientSocket, handlers::get, wrappedHandlerExecutor));
             }
         } catch (SocketException e) {
             logger.log(LogLevel.DEBUG, "Server socket was closed, probably because the server was stopped.", e);
@@ -95,26 +98,24 @@ public class Server {
         }
     }
 
-    private static class ClientHandler implements Runnable {
+    private class ClientHandler implements Runnable {
 
         private final Socket clientSocket;
         private final OutputStream out;
         private final InputStream in;
         private final Function<String, WebSocketHandler> handlerLookup;
         private final BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor;
-        private final Logger logger;
         private final PayloadCoder payloadCoder;
         private final FrameWriter frameWriter;
         private WebSocketHandler handler;
         private volatile boolean isClosed; // potentially set from handler thread
 
-        ClientHandler(Socket clientSocket, Function<String, WebSocketHandler> handlerLookup, BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor, Logger logger) throws IOException {
+        ClientHandler(Socket clientSocket, Function<String, WebSocketHandler> handlerLookup, BiConsumer<WebSocketHandler, Consumer<WebSocketHandler>> handlerExecutor) throws IOException {
             this.clientSocket = clientSocket;
             out = clientSocket.getOutputStream();
             in = clientSocket.getInputStream();
             this.handlerLookup = handlerLookup;
             this.handlerExecutor = handlerExecutor;
-            this.logger = logger;
 
             payloadCoder = new PayloadCoder();
             frameWriter = new FrameWriter(out, payloadCoder);
@@ -125,27 +126,21 @@ public class Server {
             try {
                 communicate();
             } catch (WebSocketError ex) {
-                if (logger.isEnabledAt(LogLevel.DEBUG)) {
-                    String msg = String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
-                            ex.debugDetails != null ? (" because: " + ex.debugDetails) : "");
-                    logger.log(LogLevel.DEBUG, msg, null);
-                }
+                lazyLog(LogLevel.DEBUG, () -> String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
+                        ex.debugDetails != null ? (" because: " + ex.debugDetails) : ""));
                 doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
                 handlerExecutor.accept(handler, h -> h.onClosedByClient(ex.code, ex.reason));
             } catch (MethodNotAllowedException ex) {
-                if (logger.isEnabledAt(LogLevel.WARN))
-                    logger.log(LogLevel.WARN, String.format("WebSocket client from %s used a non-allowed method: %s",
-                            clientSocket.getRemoteSocketAddress(), ex.method), null);
+                lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s used a non-allowed method: %s",
+                            clientSocket.getRemoteSocketAddress(), ex.method));
                 sendMethodNotAllowedResponse();
             } catch (IllegalArgumentException ex) {
-                if (logger.isEnabledAt(LogLevel.WARN))
-                    logger.log(LogLevel.WARN, String.format("WebSocket client from %s sent a malformed request.",
-                        clientSocket.getRemoteSocketAddress()), null);
+                lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s sent a malformed request.",
+                        clientSocket.getRemoteSocketAddress()));
                 sendBadRequestResponse();
             } catch (FileNotFoundException ex) {
-                if (logger.isEnabledAt(LogLevel.WARN))
-                    logger.log(LogLevel.WARN, String.format("WebSocket client from %s requested an unknown endpoint.",
-                        clientSocket.getRemoteSocketAddress()), null);
+                lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s requested an unknown endpoint.",
+                        clientSocket.getRemoteSocketAddress()));
                 sendNotFoundResponse();
             } catch (SocketException ex) {
                 if (!isClosed) {
@@ -174,9 +169,8 @@ public class Server {
             handler = handlerLookup.apply(endpoint);
             if (handler == null) throw new FileNotFoundException("Unknown endpoint: " + endpoint);
 
-            if (logger.isEnabledAt(LogLevel.INFO))
-                logger.log(LogLevel.INFO, String.format("New WebSocket client from %s at endpoint '%s'.",
-                        clientSocket.getRemoteSocketAddress(), endpoint), null);
+            lazyLog(LogLevel.INFO, () -> String.format("New WebSocket client from %s at endpoint '%s'.",
+                        clientSocket.getRemoteSocketAddress(), endpoint));
 
             handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort, headers)));
 
@@ -185,8 +179,7 @@ public class Server {
 
             String responseKey = createResponseKey(key);
 
-            if (logger.isEnabledAt(LogLevel.TRACE))
-                logger.log(LogLevel.TRACE, String.format("Opening handshake key is '%s', sending response key '%s'.", key, responseKey), null);
+            lazyLog(LogLevel.TRACE, () -> String.format("Opening handshake key is '%s', sending response key '%s'.", key, responseKey));
 
             sendHandshakeResponse(responseKey);
 
@@ -203,7 +196,7 @@ public class Server {
             if (firstFrame.opCode == 0) throw WebSocketError.protocolError("Continuation frame with nothing to continue.");
 
             Frame lastOne = frameBatch.get(frameBatch.size() - 1);
-            if (logger.isEnabledAt(LogLevel.TRACE)) logger.log(LogLevel.TRACE, lastOne.toString(), null);
+            lazyLog(LogLevel.TRACE, lastOne::toString);
             if (!lastOne.isFin) return;
             if (firstFrame != lastOne) {
                 if (lastOne.isControl()) {
