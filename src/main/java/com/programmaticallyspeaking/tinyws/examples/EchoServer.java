@@ -1,6 +1,6 @@
 package com.programmaticallyspeaking.tinyws.examples;
 
-import com.programmaticallyspeaking.tinyws.TinyWS;
+import com.programmaticallyspeaking.tinyws.Server;
 
 import java.io.IOException;
 import java.util.concurrent.Executor;
@@ -9,21 +9,21 @@ import java.util.concurrent.Executors;
 public class EchoServer {
     public static void main(String[] args) {
         Executor executor = Executors.newCachedThreadPool();
-        TinyWS.Logger logger = new TinyWS.Logger() {
+        Server.Logger logger = new Server.Logger() {
             @Override
-            public void log(TinyWS.LogLevel level, String message, Throwable error) {
+            public void log(Server.LogLevel level, String message, Throwable error) {
                 String msg = level + ": " + message;
                 (error != null ? System.err : System.out).println(msg);
                 if (error != null) error.printStackTrace(System.err);
             }
 
             @Override
-            public boolean isEnabledAt(TinyWS.LogLevel level) {
+            public boolean isEnabledAt(Server.LogLevel level) {
                 return true;
             }
         };
-        TinyWS ws = new TinyWS(Executors.defaultThreadFactory(), executor,
-                TinyWS.Options.withPort(9001).withLogger(logger));
+        Server ws = new Server(Executors.defaultThreadFactory(), executor,
+                Server.Options.withPort(9001).withLogger(logger));
         ws.addHandler("/", new EchoHandler());
         try {
             System.out.println("Starting");
@@ -33,12 +33,12 @@ public class EchoServer {
         }
     }
 
-    static class EchoHandler implements TinyWS.WebSocketHandler {
+    static class EchoHandler implements Server.WebSocketHandler {
 
-        private TinyWS.WebSocketClient client;
+        private Server.WebSocketClient client;
 
         @Override
-        public void onOpened(TinyWS.WebSocketClient client) {
+        public void onOpened(Server.WebSocketClient client) {
             this.client = client;
         }
 

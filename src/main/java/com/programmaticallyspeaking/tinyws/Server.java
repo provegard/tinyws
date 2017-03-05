@@ -17,7 +17,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public class TinyWS {
+public class Server {
     private static final String HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     private final ThreadFactory threadFactory;
     private final Executor handlerExecutor;
@@ -27,7 +27,7 @@ public class TinyWS {
     private ServerSocket serverSocket;
     private Map<String, WebSocketHandler> handlers = new HashMap<>();
 
-    public TinyWS(ThreadFactory threadFactory, Executor handlerExecutor, Options options) {
+    public Server(ThreadFactory threadFactory, Executor handlerExecutor, Options options) {
         this.threadFactory = threadFactory;
         this.handlerExecutor = handlerExecutor;
         this.options = options;
