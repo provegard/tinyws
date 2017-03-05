@@ -735,12 +735,40 @@ public class Server {
 
         void sendBinaryData(byte[] data) throws IOException;
 
+        /**
+         * Returns the value of the User-Agent header passed by the client when requesting a Websocket connection. If no
+         * User-Agent header was present, returns {@code null}.
+         *
+         * @return the Host header value, or {@code null}
+         */
         String userAgent();
 
+        /**
+         * Returns the value of the Host header passed by the client when requesting a Websocket connection. If no
+         * Host header was present, returns {@code null}.
+         *
+         * @return the Host header value, or {@code null}
+         */
         String host();
 
-        // https://tools.ietf.org/html/rfc3986#section-3
+        /**
+         * Returns the query (part after '?', not including the fragment) used by the client when requesting a WebSocket
+         * connection. If no query was specified, returns {@code null}. If an empty query was specified, returns the
+         * empty string. The '?' character is never included.
+         *
+         * @return a query string, or {@code null}
+         * @see <a href="https://tools.ietf.org/html/rfc3986#section-3">Uniform Resource Identifier (URI): Generic Syntax</a>
+         */
         String query();
+
+        /**
+         * Returns the fragment (part after '#') used by the client when requesting a WebSocket connection. If no
+         * fragment was specified, returns {@code null}. If an empty fragment was specified, returns the empty string.
+         * The '#' character is never included.
+         *
+         * @return a fragment string, or {@code null}
+         * @see <a href="https://tools.ietf.org/html/rfc3986#section-3">Uniform Resource Identifier (URI): Generic Syntax</a>
+         */
         String fragment();
     }
 
