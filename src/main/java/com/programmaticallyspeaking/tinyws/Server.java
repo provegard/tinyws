@@ -297,9 +297,14 @@ public class Server {
             // https://tools.ietf.org/html/rfc7231#section-7.4.2
             outputLine(writer, String.format("Server: %s %s", ServerName, ServerVersion));
 
-            // https://tools.ietf.org/html/rfc7230#section-6.1
-            if (statusCode >= 200)
+            // Headers added when we don't do a connection upgrade to WebSocket!
+            if (statusCode >= 200) {
+                // https://tools.ietf.org/html/rfc7230#section-6.1
                 outputLine(writer, "Connection: close");
+
+                // https://tools.ietf.org/html/rfc7230#section-3.3.2
+                outputLine(writer, "Content-Length: 0");
+            }
 
             outputLine(writer, "");
             writer.flush();
