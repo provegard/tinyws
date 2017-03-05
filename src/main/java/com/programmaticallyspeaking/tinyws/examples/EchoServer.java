@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2017, Per Rovegård <per@rovegard.se>
+ *
+ * Distributed under the MIT License (license terms are at http://per.mit-license.org, or in the LICENSE file at
+ * https://github.com/provegard/tinyws/blob/master/LICENSE).
+ */
+
 package com.programmaticallyspeaking.tinyws.examples;
 
 import com.programmaticallyspeaking.tinyws.Server;
