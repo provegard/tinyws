@@ -9,7 +9,21 @@ import java.util.concurrent.Executors;
 public class EchoServer {
     public static void main(String[] args) {
         Executor executor = Executors.newCachedThreadPool();
-        TinyWS ws = new TinyWS(Executors.defaultThreadFactory(), executor, TinyWS.Options.withPort(9001));
+        TinyWS.Logger logger = new TinyWS.Logger() {
+            @Override
+            public void log(TinyWS.LogLevel level, String message, Throwable error) {
+                String msg = level + ": " + message;
+                (error != null ? System.err : System.out).println(msg);
+                if (error != null) error.printStackTrace(System.err);
+            }
+
+            @Override
+            public boolean isEnabledAt(TinyWS.LogLevel level) {
+                return true;
+            }
+        };
+        TinyWS ws = new TinyWS(Executors.defaultThreadFactory(), executor,
+                TinyWS.Options.withPort(9001).withLogger(logger));
         ws.addHandler("/", new EchoHandler());
         try {
             System.out.println("Starting");

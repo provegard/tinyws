@@ -75,6 +75,10 @@ public class TinyWS {
 
     private void acceptInLoop() {
         try {
+            if (logger.isEnabledAt(LogLevel.INFO))
+                logger.log(LogLevel.INFO, "Receiving WebSocket clients at " +
+                    serverSocket.getLocalSocketAddress(), null);
+
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 Thread t = threadFactory.newThread(new ClientHandler(clientSocket, handlers::get, (handler, fun) -> {
@@ -119,12 +123,22 @@ public class TinyWS {
             try {
                 communicate();
             } catch (WebSocketError ex) {
-                if (ex.debugDetails != null) logger.log(LogLevel.DEBUG, "Closing because: " + ex.debugDetails, null);
+                if (logger.isEnabledAt(LogLevel.DEBUG)) {
+                    String msg = String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
+                        ex.debugDetails != null ? (" because: " + ex.debugDetails) : "");
+                    logger.log(LogLevel.DEBUG, msg, null);
+                }
                 doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
                 handlerExecutor.accept(handler, h -> h.onClosedByClient(ex.code, ex.reason));
             } catch (IllegalArgumentException ex) {
+                if (logger.isEnabledAt(LogLevel.WARN))
+                    logger.log(LogLevel.WARN, String.format("WebSocket client from %s sent a malformed request.",
+                        clientSocket.getRemoteSocketAddress()), null);
                 sendBadRequestResponse();
             } catch (FileNotFoundException ex) {
+                if (logger.isEnabledAt(LogLevel.WARN))
+                    logger.log(LogLevel.WARN, String.format("WebSocket client from %s requested an unknown endpoint.",
+                        clientSocket.getRemoteSocketAddress()), null);
                 sendNotFoundResponse();
             } catch (SocketException ex) {
                 if (!isClosed) {
@@ -153,6 +167,10 @@ public class TinyWS {
 
             handler = handlerLookup.apply(endpoint);
             if (handler == null) throw new FileNotFoundException("Unknown endpoint: " + endpoint);
+
+            if (logger.isEnabledAt(LogLevel.INFO))
+                logger.log(LogLevel.INFO, String.format("New WebSocket client from %s at endpoint '%s'.",
+                        clientSocket.getRemoteSocketAddress(), endpoint), null);
 
             handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort)));
 
