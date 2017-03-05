@@ -18,6 +18,8 @@ import java.util.function.Function;
 
 public class Server {
     private static final String HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    private static final int SupportedVersion = 13;
+
     private final Executor mainExecutor;
     private final Executor handlerExecutor;
     private final Options options;
@@ -159,7 +161,7 @@ public class Server {
         private void communicate() throws IOException, NoSuchAlgorithmException {
             Headers headers = Headers.read(in);
             if (!headers.isProperUpgrade()) throw new IllegalArgumentException("Handshake has malformed upgrade.");
-            if (headers.version() != 13) throw new IllegalArgumentException("Bad version, must be 13.");
+            if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
             String endpoint = headers.endpoint;
             if (endpoint == null) throw new IllegalArgumentException("Missing endpoint.");
 
@@ -257,6 +259,7 @@ public class Server {
         }
 
         private void outputLine(PrintWriter writer, String data) {
+            System.out.println("> " + data);
             writer.print(data);
             writer.print("\r\n");
         }
@@ -271,6 +274,10 @@ public class Server {
         }
 
         private void sendBadRequestResponse() {
+            // Advertise supported version regardless of what was bad. A bit lazy, but simple.
+            Map<String, String> headers = new HashMap<String, String>() {{
+                put("Sec-WebSocket-Version", Integer.toString(SupportedVersion));
+            }};
             sendResponse(400, "Bad Request", Collections.emptyMap());
         }
         private void sendNotFoundResponse() {
@@ -452,7 +459,10 @@ public class Server {
                 }
 
                 String[] keyValue = inputLine.split(":", 2);
-                if (keyValue.length == 2) headers.put(keyValue[0], keyValue[1].trim());
+                if (keyValue.length != 2) continue;
+
+                System.out.println("< " + inputLine);
+                headers.put(keyValue[0], keyValue[1].trim());
             }
             // Note: Do NOT close the reader, because the stream must remain open!
             return new Headers(headers, endpoint);
