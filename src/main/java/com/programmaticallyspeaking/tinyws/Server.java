@@ -293,7 +293,14 @@ public class Server {
             for (Map.Entry<String, String> entry : headers.entrySet()) {
                 outputLine(writer, entry.getKey() + ": " + entry.getValue());
             }
+
+            // https://tools.ietf.org/html/rfc7231#section-7.4.2
             outputLine(writer, String.format("Server: %s %s", ServerName, ServerVersion));
+
+            // https://tools.ietf.org/html/rfc7230#section-6.1
+            if (statusCode >= 200)
+                outputLine(writer, "Connection: close");
+
             outputLine(writer, "");
             writer.flush();
             // Note: Do NOT close the writer, as the stream must remain open
