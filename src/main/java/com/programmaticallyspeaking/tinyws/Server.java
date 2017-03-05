@@ -181,6 +181,8 @@ public class Server {
             handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort, headers)));
 
             String key = headers.key();
+            if (key == null) throw new IllegalArgumentException("Missing Sec-WebSocket-Key in handshake.");
+
             String responseKey = createResponseKey(key);
 
             if (logger.isEnabledAt(LogLevel.TRACE))
@@ -469,12 +471,7 @@ public class Server {
             }
         }
 
-        String key() {
-            String key = headers.get("Sec-WebSocket-Key");
-            if (key == null) throw new IllegalArgumentException("Missing Sec-WebSocket-Key in handshake.");
-            return key;
-        }
-
+        String key() { return headers.get("Sec-WebSocket-Key"); }
         String userAgent() { return headers.get("User-Agent"); }
         String host() { return headers.get("Host"); }
 
