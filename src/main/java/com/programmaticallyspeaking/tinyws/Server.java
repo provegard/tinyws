@@ -30,8 +30,8 @@ import java.util.function.Supplier;
  * 4. Connect clients...
  * 5. Stop using {@see Server#stop()}.
  *
- * The server implementation passes all implemented tests of <a href="https://github.com/crossbario/autobahn-testsuite">
- * Autobahn|Testsuite</a> (version 0.10.9).
+ * The server implementation passes all tests of <a href="https://github.com/crossbario/autobahn-testsuite">
+ * Autobahn|Testsuite</a> (version 0.10.9) except 12.* and 13.* (compression using the permessage-deflate extension).
  */
 public class Server {
     public static final String ServerName = "TinyWS Server";
