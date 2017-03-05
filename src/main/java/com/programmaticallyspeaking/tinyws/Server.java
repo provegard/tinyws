@@ -267,7 +267,6 @@ public class Server {
         }
 
         private void outputLine(PrintWriter writer, String data) {
-            System.out.println("> " + data);
             writer.print(data);
             writer.print("\r\n");
         }
@@ -491,7 +490,6 @@ public class Server {
                 String[] keyValue = inputLine.split(":", 2);
                 if (keyValue.length != 2) continue;
 
-                System.out.println("< " + inputLine);
                 headers.put(keyValue[0], keyValue[1].trim());
             }
             // Note: Do NOT close the reader, because the stream must remain open!
