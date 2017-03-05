@@ -449,10 +449,12 @@ public class Server {
     static class Headers {
         private final Map<String, String> headers;
         final String endpoint;
+        final String query;
 
-        private Headers(Map<String, String> headers, String endpoint) {
+        private Headers(Map<String, String> headers, String endpoint, String query) {
             this.headers = headers;
             this.endpoint = endpoint;
+            this.query = query;
         }
 
         boolean isProperUpgrade() {
@@ -478,7 +480,7 @@ public class Server {
 
         static Headers read(InputStream in) throws IOException {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            String inputLine, endpoint = null;
+            String inputLine, endpoint = null, query = "";
             Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             boolean isFirstLine = true;
             while (!"".equals((inputLine = reader.readLine()))) {
@@ -487,6 +489,11 @@ public class Server {
                     if (parts.length != 3) throw new IllegalArgumentException("Malformed 1st header line: " + inputLine);
                     if (!"GET".equals(parts[0])) throw new MethodNotAllowedException(parts[0]);
                     endpoint = parts[1];
+                    int q = endpoint.indexOf('?');
+                    if (q >= 0) {
+                        query = endpoint.substring(q + 1);
+                        endpoint = endpoint.substring(0, q);
+                    }
                     isFirstLine = false;
                 }
 
@@ -496,7 +503,7 @@ public class Server {
                 headers.put(keyValue[0], keyValue[1].trim());
             }
             // Note: Do NOT close the reader, because the stream must remain open!
-            return new Headers(headers, endpoint);
+            return new Headers(headers, endpoint, query);
         }
     }
 

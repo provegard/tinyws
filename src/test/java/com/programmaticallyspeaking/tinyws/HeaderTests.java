@@ -83,4 +83,26 @@ public class HeaderTests {
         Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
         assertEquals(headers.host(), expected);
     }
+
+    @DataProvider
+    public Object[][] endpoint_data() {
+        return new Object[][] {
+            { "Plain GET", "GET /foo HTTP/1.1\r\n\r\n", "/foo", "" },
+            { "Empty query", "GET /foo? HTTP/1.1\r\n\r\n", "/foo", "" },
+            { "GET with query", "GET /foo?bar=baz HTTP/1.1\r\n\r\n", "/foo", "bar=baz" },
+            { "Query and fragment", "GET /foo?bar#baz HTTP/1.1\r\n\r\n", "/foo", "bar#baz" }
+        };
+    }
+
+    @Test(dataProvider = "endpoint_data")
+    public void Endpoint_should_be_extracted(String desc, String headers, String expected, String ignored) throws IOException {
+        Headers h = Headers.read(streamFromString(headers));
+        assertEquals(h.endpoint, expected);
+    }
+
+    @Test(dataProvider = "endpoint_data")
+    public void Querystring_should_be_extracted(String desc, String headers, String ignored, String expected) throws IOException {
+        Headers h = Headers.read(streamFromString(headers));
+        assertEquals(h.query, expected);
+    }
 }
