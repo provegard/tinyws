@@ -31,13 +31,20 @@ public class TinyWS {
         this.threadFactory = threadFactory;
         this.handlerExecutor = handlerExecutor;
         this.options = options;
-        this.logger = (level, message, error) -> {
-            if (options.logger != null) {
-                try {
-                    options.logger.log(level, message, error);
-                } catch (Exception ignore) {
-                    // ignore logging errors
+        this.logger = new Logger() {
+            public void log(LogLevel level, String message, Throwable error) {
+                if (isEnabledAt(level)) {
+                    try {
+                        options.logger.log(level, message, error);
+                    } catch (Exception ignore) {
+                        // ignore logging errors
+                    }
                 }
+            }
+
+            @Override
+            public boolean isEnabledAt(LogLevel level) {
+                return options.logger != null && options.logger.isEnabledAt(level);
             }
         };
     }
@@ -152,6 +159,9 @@ public class TinyWS {
             String key = headers.key();
             String responseKey = createResponseKey(key);
 
+            if (logger.isEnabledAt(LogLevel.TRACE))
+                logger.log(LogLevel.TRACE, String.format("Opening handshake key is '%s', sending response key '%s'.", key, responseKey), null);
+
             sendHandshakeResponse(responseKey);
 
             List<Frame> frameBatch = new ArrayList<>();
@@ -167,6 +177,7 @@ public class TinyWS {
             if (firstFrame.opCode == 0) throw WebSocketError.protocolError("Continuation frame with nothing to continue.");
 
             Frame lastOne = frameBatch.get(frameBatch.size() - 1);
+            if (logger.isEnabledAt(LogLevel.TRACE)) logger.log(LogLevel.TRACE, lastOne.toString(), null);
             if (!lastOne.isFin) return;
             if (firstFrame != lastOne) {
                 if (lastOne.isControl()) {
@@ -217,14 +228,15 @@ public class TinyWS {
                     throw new WebSocketError(i, "", null);
                 case 9:
                     // Ping, send pong!
+                    logger.log(LogLevel.TRACE, "Got ping frame, sending pong.", null);
                     frameWriter.writePongFrame(result.payloadData);
                     break;
                 case 10:
                     // Pong is ignored
+                    logger.log(LogLevel.TRACE, "Ignoring unsolicited pong frame.", null);
                     break;
                 default:
                     throw WebSocketError.protocolError("Invalid opcode: " + result.opCode);
-
             }
         }
 
@@ -266,6 +278,11 @@ public class TinyWS {
         final int opCode;
         final byte[] payloadData;
         final boolean isFin;
+
+        public String toString() {
+            return String.format("Frame[opcode=%d, control=%b, payload length=%d, fragmented=%b]",
+                    opCode, isControl(), payloadData.length, !isFin);
+        }
 
         boolean isControl() {
             return (opCode & 8) == 8;
@@ -634,6 +651,7 @@ public class TinyWS {
 
     public interface Logger {
         void log(LogLevel level, String message, Throwable error);
+        boolean isEnabledAt(LogLevel level);
     }
 
     public interface WebSocketClient {
