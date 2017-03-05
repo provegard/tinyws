@@ -69,4 +69,18 @@ public class HeaderTests {
         Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
         assertEquals(headers.userAgent(), expected);
     }
+
+    @DataProvider
+    public Object[][] host_data() {
+        return new Object[][] {
+            { "Proper", "Host: test:81\r\n", "test:81" },
+            { "Missing", "", null }
+        };
+    }
+
+    @Test(dataProvider = "host_data")
+    public void Host_should_be_extracted(String desc, String header, String expected) throws IOException {
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
+        assertEquals(headers.host(), expected);
+    }
 }

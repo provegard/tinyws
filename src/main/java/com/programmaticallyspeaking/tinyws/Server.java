@@ -473,9 +473,8 @@ public class Server {
             return key;
         }
 
-        String userAgent() {
-            return headers.get("User-Agent");
-        }
+        String userAgent() { return headers.get("User-Agent"); }
+        String host() { return headers.get("Host"); }
 
         static Headers read(InputStream in) throws IOException {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
