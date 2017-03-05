@@ -21,6 +21,18 @@ import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+/**
+ * A WebSocket server. Usage:
+ *
+ * 1. Create an instance of this class.
+ * 2. Add one or more handlers using the {@see Server#addHandler(Server.WebSocketHandler)} method.
+ * 3. Start the server using {@see Server#start()}.
+ * 4. Connect clients...
+ * 5. Stop using {@see Server#stop()}.
+ *
+ * The server implementation passes all implemented tests of <a href="https://github.com/crossbario/autobahn-testsuite">
+ * Autobahn|Testsuite</a> (version 0.10.9).
+ */
 public class Server {
     public static final String ServerName = "TinyWS Server";
     public static final String ServerVersion = "0.0.1"; //TODO: Get from resource
@@ -36,6 +48,15 @@ public class Server {
     private ServerSocket serverSocket;
     private Map<String, WebSocketHandler> handlers = new HashMap<>();
 
+    /**
+     * Constructs a new server instance but doesn't start listening for client connections.
+     *
+     * @param mainExecutor the {@see Executor} instance that will be used to create the main listener task as well as
+     *                     tasks for handling connected clients. Please note that each task will use excessive blocking
+     *                     I/O, so use an appropriate executor.
+     * @param handlerExecutor the {@code Executor} instance that will be used to invoke handlers.
+     * @param options server options
+     */
     public Server(Executor mainExecutor, Executor handlerExecutor, Options options) {
         this.mainExecutor = mainExecutor;
         this.handlerExecutor = handlerExecutor;
@@ -62,11 +83,29 @@ public class Server {
         if (logger.isEnabledAt(level)) logger.log(level, msgFun.get(), null);
     }
 
+    /**
+     * Adds a handler for a specific endpoint. Handlers must be added before the server is started. The endpoint must
+     * match a requested resource exactly to be used. The root handler must thus be registered for the "/" endpoint.
+     *
+     * @param endpoint non-{@code null}, non-empty endpoint
+     * @param handler a handler
+     * @exception IllegalStateException if the server has been started
+     */
     public void addHandler(String endpoint, WebSocketHandler handler) {
+        if (endpoint == null || "".equals(endpoint)) throw new IllegalArgumentException("Endpoint must be non-empty.");
         if (serverSocket != null) throw new IllegalStateException("Please add handlers before starting the server.");
         handlers.put(endpoint, handler);
     }
 
+    /**
+     * Starts listening for client connections, using the port specified in the options passed to the constructor. If
+     * a backlog was not specified in the options, the Java-default backlog (50 for Java 8) is used.
+     *
+     * The server socket is created on the current thread, in the interest of fail-fast. The main executor is then
+     * used to start the listening task.
+     *
+     * @exception IOException if creating the server socket fails
+     */
     public void start() throws IOException {
         Integer backlog = options.backlog;
         serverSocket = backlog == null
@@ -75,6 +114,11 @@ public class Server {
         mainExecutor.execute(this::acceptInLoop);
     }
 
+    /**
+     * Stops listening for client connection. Does nothing if the server has already been stopped (or hasn't been started
+     * to begin with). Any exception from closing the server socket is suppressed but will be logged at WARN level to
+     * any supplied logger.
+     */
     public void stop() {
         if (serverSocket == null) return;
         try {
