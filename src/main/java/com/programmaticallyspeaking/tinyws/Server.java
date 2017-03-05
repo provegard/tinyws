@@ -585,6 +585,10 @@ public class Server {
             writeFrame(2, data);
         }
 
+        void writePingFrame(byte[] data) throws IOException {
+            writeFrame(9, data);
+        }
+
         void writePongFrame(byte[] data) throws IOException {
             writeFrame(10, data);
         }
@@ -599,7 +603,7 @@ public class Server {
          */
         synchronized void writeFrame(int opCode, byte[] data) throws IOException {
             int firstByte = 128 | opCode; // FIN + opCode
-            int dataLen = data.length;
+            int dataLen = data != null ? data.length : 0;
             int secondByte;
             int extraLengthBytes = 0;
             if (dataLen < 126) {
@@ -616,7 +620,7 @@ public class Server {
             if (extraLengthBytes > 0) {
                 out.write(numberToBytes(data.length, extraLengthBytes));
             }
-            out.write(data);
+            if (data != null) out.write(data);
             out.flush();
         }
     }
@@ -631,6 +635,10 @@ public class Server {
             this.writer = writer;
             this.closeCallback = closeCallback;
             this.headers = headers;
+        }
+
+        public void ping(byte[] data) throws IOException {
+            writer.writePingFrame(data);
         }
 
         public void close(int code, String reason) throws IOException {
@@ -729,6 +737,8 @@ public class Server {
     }
 
     public interface WebSocketClient {
+        void ping(byte[] data) throws IOException;
+
         void close(int code, String reason) throws IOException;
 
         void sendTextMessage(String text) throws IOException;
