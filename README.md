@@ -11,10 +11,10 @@ several megabytes of dependencies.
 
 ## Status
 
-Version 0.00000001... Currently it's an application instead of a reusable
-library. Very experimental and very much a hack.
+Version 0.0.1.
 
-It passes all implemented tests of [autobahn-testsuite](https://github.com/crossbario/autobahn-testsuite).
+It passes all tests of [Autobahn|Testsuite](https://github.com/crossbario/autobahn-testsuite) version
+0.10.9, except 12.\* and 13.\* (compression using the permessage-deflate extension).
 
 ## Author
 
