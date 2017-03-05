@@ -30,7 +30,7 @@ public class EchoServer {
             }
         };
         Server ws = new Server(executor, executor,
-                Server.Options.withPort(9001).withLogger(logger));
+                Server.Options.withPort(9001).andLogger(logger));
         ws.addHandler("/", new EchoHandler());
         try {
             System.out.println("Starting");

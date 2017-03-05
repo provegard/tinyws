@@ -107,10 +107,9 @@ public class Server {
      * @exception IOException if creating the server socket fails
      */
     public void start() throws IOException {
-        Integer backlog = options.backlog;
-        serverSocket = backlog == null
-            ? new ServerSocket(options.port)
-            : new ServerSocket(options.port, backlog);
+        // Using backlog 0 will force ServerSocket to use the default (50).
+        int backlog = options.backlog != null ? options.backlog : 0;
+        serverSocket = new ServerSocket(options.port, backlog, options.address);
         mainExecutor.execute(this::acceptInLoop);
     }
 
@@ -735,6 +734,7 @@ public class Server {
         Integer backlog;
         int port;
         Logger logger;
+        InetAddress address;
 
         private Options(int port) {
             this.port = port;
@@ -742,13 +742,17 @@ public class Server {
         public static Options withPort(int port) {
             return new Options(port);
         }
-        public Options withBacklog(int backlog) {
+        public Options andBacklog(int backlog) {
             if (backlog < 0) throw new IllegalArgumentException("Backlog must be >= 0");
             this.backlog = backlog;
             return this;
         }
-        public Options withLogger(Logger logger) {
+        public Options andLogger(Logger logger) {
             this.logger = logger;
+            return this;
+        }
+        public Options andAddress(InetAddress address) {
+            this.address = address;
             return this;
         }
     }
