@@ -419,7 +419,7 @@ public class TinyWS {
 
         String key() {
             String key = headers.get("Sec-WebSocket-Key");
-            if (key == null) throw new IllegalStateException("Missing Sec-WebSocket-Key in handshake.");
+            if (key == null) throw new IllegalArgumentException("Missing Sec-WebSocket-Key in handshake.");
             return key;
         }
 
