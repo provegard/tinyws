@@ -180,7 +180,7 @@ public class Server {
                 logger.log(LogLevel.INFO, String.format("New WebSocket client from %s at endpoint '%s'.",
                         clientSocket.getRemoteSocketAddress(), endpoint), null);
 
-            handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort)));
+            handlerExecutor.accept(handler, h -> h.onOpened(new WebSocketClientImpl(frameWriter, this::abort, headers)));
 
             String key = headers.key();
             String responseKey = createResponseKey(key);
@@ -619,10 +619,12 @@ public class Server {
 
         private final FrameWriter writer;
         private final Runnable closeCallback;
+        private final Headers headers;
 
-        WebSocketClientImpl(FrameWriter writer, Runnable closeCallback) {
+        WebSocketClientImpl(FrameWriter writer, Runnable closeCallback, Headers headers) {
             this.writer = writer;
             this.closeCallback = closeCallback;
+            this.headers = headers;
         }
 
         public void close(int code, String reason) throws IOException {
@@ -636,6 +638,10 @@ public class Server {
 
         public void sendBinaryData(byte[] data) throws IOException {
             writer.writeBinaryFrame(data);
+        }
+
+        public String userAgent() {
+            return headers.userAgent();
         }
     }
 
@@ -722,7 +728,8 @@ public class Server {
 
         void sendBinaryData(byte[] data) throws IOException;
 
-        // TODO: Get user-agent, query string params
+        // TODO: query string params
+        String userAgent();
     }
 
     public interface WebSocketHandler {
