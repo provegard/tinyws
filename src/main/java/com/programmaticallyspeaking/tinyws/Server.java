@@ -17,6 +17,9 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class Server {
+    public static final String ServerName = "TinyWS Server";
+    public static final String ServerVersion = "0.0.1"; //TODO: Get from resource
+
     private static final String HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     private static final int SupportedVersion = 13;
 
@@ -290,6 +293,7 @@ public class Server {
             for (Map.Entry<String, String> entry : headers.entrySet()) {
                 outputLine(writer, entry.getKey() + ": " + entry.getValue());
             }
+            outputLine(writer, String.format("Server: %s %s", ServerName, ServerVersion));
             outputLine(writer, "");
             writer.flush();
             // Note: Do NOT close the writer, as the stream must remain open
