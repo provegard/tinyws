@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -486,13 +487,8 @@ public class Server {
     }
 
     static class PayloadCoder {
-        private final Charset charset;
-        private final CharsetDecoder decoder;
-
-        PayloadCoder() {
-            charset = Charset.forName("UTF-8");
-            decoder = charset.newDecoder();
-        }
+        private final Charset charset = StandardCharsets.UTF_8;
+        private final CharsetDecoder decoder = charset.newDecoder();
 
         String decode(byte[] bytes) throws WebSocketError {
             return decode(bytes, 0, bytes.length);
