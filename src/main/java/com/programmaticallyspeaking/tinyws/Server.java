@@ -436,7 +436,7 @@ public class Server {
         }
     }
 
-    private static class Headers {
+    static class Headers {
         private final Map<String, String> headers;
         final String endpoint;
 
@@ -638,7 +638,7 @@ public class Server {
         return array;
     }
 
-    private static String createResponseKey(String key) throws NoSuchAlgorithmException {
+    static String createResponseKey(String key) throws NoSuchAlgorithmException {
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
         byte[] rawBytes = (key + HANDSHAKE_GUID).getBytes();
         byte[] result = sha1.digest(rawBytes);

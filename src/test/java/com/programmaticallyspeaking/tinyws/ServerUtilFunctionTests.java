@@ -4,10 +4,12 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 
+import static org.testng.Assert.assertEquals;
 import static org.testng.internal.junit.ArrayAsserts.assertArrayEquals;
 
-public class ServerTest {
+public class ServerUtilFunctionTests {
 
     @DataProvider
     public Object[][] numberToBytes_data() {
@@ -24,5 +26,18 @@ public class ServerTest {
     public void numberToBytes_should_yield_correct_data(int number, int len, byte[] expected) throws IOException {
         byte[] actual = Server.numberToBytes(number, len);
         assertArrayEquals(expected, actual);
+    }
+
+    @DataProvider
+    public Object[][] createResponseKey_data() {
+        return new Object[][] {
+            { "dGhlIHNhbXBsZSBub25jZQ==", "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" }
+        };
+    }
+
+    @Test(dataProvider = "createResponseKey_data")
+    public void createResponseKey_should_create_correct_key(String input, String expected) throws NoSuchAlgorithmException {
+        String actual = Server.createResponseKey(input);
+        assertEquals(actual, expected);
     }
 }
