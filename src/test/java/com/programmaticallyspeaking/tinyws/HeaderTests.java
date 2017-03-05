@@ -38,4 +38,19 @@ public class HeaderTests {
         Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\nSec-WebSocket-Key: foo\r\n\r\n"));
         assertEquals(headers.key(), "foo");
     }
+
+    @DataProvider
+    public Object[][] version_data() {
+        return new Object[][] {
+            { "Proper", "Sec-WebSocket-Version: 13\r\n", 13 },
+            { "Invalid", "Sec-WebSocket-Version: foo\r\n", 0 },
+            { "Missing", "", 0 }
+        };
+    }
+
+    @Test(dataProvider = "version_data")
+    public void WebSocket_version_should_be_extracted(String desc, String header, int expected) throws IOException {
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
+        assertEquals(headers.version(), expected);
+    }
 }
