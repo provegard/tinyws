@@ -174,7 +174,7 @@ public class Server {
             } catch (WebSocketError ex) {
                 lazyLog(LogLevel.DEBUG, () -> String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
                         ex.debugDetails != null ? (" because: " + ex.debugDetails) : ""));
-                doIgnoringExceptions(() -> frameWriter.writeCloseFrame(ex.code, ex.reason));
+                doIgnoringExceptions(() -> frameWriter.writeClose(ex.code, ex.reason));
                 invokeHandler(h -> h.onClosedByClient(ex.code, ex.reason));
             } catch (MethodNotAllowedException ex) {
                 lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s used a non-allowed method: %s",
@@ -283,7 +283,7 @@ public class Server {
                 case 9:
                     // Ping, send pong!
                     logger.log(LogLevel.TRACE, "Got ping frame, sending pong.", null);
-                    frameWriter.writePongFrame(result.payloadData);
+                    frameWriter.writePong(result.payloadData);
                     break;
                 case 10:
                     // Pong is ignored
@@ -605,7 +605,7 @@ public class Server {
             this.maxFrameSize = maxFrameSize;
         }
 
-        void writeCloseFrame(int code, String reason) throws IOException {
+        void writeClose(int code, String reason) throws IOException {
             byte[] s = payloadCoder.encode(reason);
             byte[] numBytes = numberToBytes(code, 2);
             byte[] combined = new byte[numBytes.length + s.length];
@@ -614,24 +614,24 @@ public class Server {
             writeFrame(8, combined);
         }
 
-        void writeTextFrame(String text) throws IOException {
+        void writeText(String text) throws IOException {
             byte[] s = payloadCoder.encode(text);
             writePossiblyFragmentedFrames(1, s);
         }
 
-        void writeBinaryFrame(byte[] data) throws IOException {
+        void writeBinary(byte[] data) throws IOException {
             writePossiblyFragmentedFrames(2, data);
         }
 
-        void writePingFrame(byte[] data) throws IOException {
+        void writePing(byte[] data) throws IOException {
             writeFrame(9, data);
         }
 
-        void writePongFrame(byte[] data) throws IOException {
+        void writePong(byte[] data) throws IOException {
             writeFrame(10, data);
         }
 
-        void writePossiblyFragmentedFrames(int opCode, byte[] data) throws IOException {
+        private void writePossiblyFragmentedFrames(int opCode, byte[] data) throws IOException {
             // https://tools.ietf.org/html/rfc6455#section-5.6 implies that a single frame may contain an UTF-8
             // sequence that by itself is invalid, as long as the entire message text is valid UTF-8.
             if (maxFrameSize == 0 || data == null || data.length <= maxFrameSize) {
@@ -646,7 +646,7 @@ public class Server {
             }
         }
 
-        void writeFrame(int opCode, byte[] data) throws IOException {
+        private void writeFrame(int opCode, byte[] data) throws IOException {
             writeFrame(opCode, data, 0, data != null ? data.length : 0);
         }
 
@@ -658,7 +658,7 @@ public class Server {
          * @param data frame data
          * @throws IOException thrown if writing to the socket fails
          */
-        synchronized void writeFrame(int opCode, byte[] data, int offset, int len) throws IOException {
+        synchronized private void writeFrame(int opCode, byte[] data, int offset, int len) throws IOException {
             int totalLen = data != null ? data.length : 0;
             boolean isFirstFrame = offset == 0;
             boolean isFinalFrame = offset + len == totalLen;
@@ -699,20 +699,20 @@ public class Server {
         }
 
         public void ping(byte[] data) throws IOException {
-            writer.writePingFrame(data);
+            writer.writePing(data);
         }
 
         public void close(int code, String reason) throws IOException {
-            writer.writeCloseFrame(code, reason);
+            writer.writeClose(code, reason);
             closeCallback.run();
         }
 
         public void sendTextMessage(String text) throws IOException {
-            writer.writeTextFrame(text);
+            writer.writeText(text);
         }
 
         public void sendBinaryData(byte[] data) throws IOException {
-            writer.writeBinaryFrame(data);
+            writer.writeBinary(data);
         }
 
         public String userAgent() { return headers.userAgent(); }

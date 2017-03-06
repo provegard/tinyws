@@ -30,7 +30,7 @@ public abstract class FrameTests {
 
         @BeforeClass
         public void Write_and_read() throws Throwable {
-            ByteArrayInputStream in = write(w -> w.writeTextFrame("hello åäö"), 0);
+            ByteArrayInputStream in = write(w -> w.writeText("hello åäö"), 0);
             this.frame = Frame.read(in);
         }
 
@@ -61,7 +61,7 @@ public abstract class FrameTests {
 
         @BeforeClass
         public void Write_and_read() throws Throwable {
-            ByteArrayInputStream in = write(w -> w.writeBinaryFrame(new byte[] { 1, 2, 3, 4 }), 0);
+            ByteArrayInputStream in = write(w -> w.writeBinary(new byte[] { 1, 2, 3, 4 }), 0);
             this.frame = Frame.read(in);
         }
 
@@ -82,7 +82,7 @@ public abstract class FrameTests {
 
         @BeforeClass
         public void Write_and_read() throws Throwable {
-            ByteArrayInputStream in = write(w -> w.writeTextFrame("hello world there"), 10);
+            ByteArrayInputStream in = write(w -> w.writeText("hello world there"), 10);
             this.frame1 = Frame.read(in);
             this.frame2 = Frame.read(in);
         }
@@ -121,7 +121,7 @@ public abstract class FrameTests {
 
         @BeforeClass
         public void Write_and_read() throws Throwable {
-            ByteArrayInputStream in = write(w -> w.writeBinaryFrame(new byte[] { 1, 2, 3, 4 }), 2);
+            ByteArrayInputStream in = write(w -> w.writeBinary(new byte[] { 1, 2, 3, 4 }), 2);
             this.frame1 = Frame.read(in);
             this.frame2 = Frame.read(in);
         }
