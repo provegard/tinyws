@@ -701,13 +701,15 @@ public class Server {
             this.headers = headers;
         }
 
-        public void ping(byte[] data) throws IOException {
-            writer.writePing(data);
+        public void ping() throws IOException {
+            writer.writePing(null);
         }
 
-        public void close(int code, String reason) throws IOException {
-            writer.writeClose(code, reason);
-            closeCallback.run();
+        public void close() {
+            doIgnoringExceptions(() -> {
+                writer.writeClose(1001, "Going Away");
+                closeCallback.run();
+            });
         }
 
         public void sendTextMessage(String text) throws IOException {
@@ -759,6 +761,10 @@ public class Server {
         }
     }
 
+    /**
+     * Server options, configured using a fluent interface. Start with {@code Options.withPort(int)} since port is
+     * required.
+     */
     public static class Options {
         Integer backlog;
         int port;
@@ -769,22 +775,59 @@ public class Server {
         private Options(int port) {
             this.port = port;
         }
+
+        /**
+         * Creates new options with the given port.
+         *
+         * @param port the port to use when listening for WebSocket clients
+         * @return this options instance
+         */
         public static Options withPort(int port) {
             return new Options(port);
         }
+
+        /**
+         * Specifies the backlog size, i.e. the size of the client connection queue. If the queue is full, a client
+         * connection is rejected.
+         *
+         * @param backlog the backlog size, which must be greater than 0
+         * @return this options instance
+         */
         public Options andBacklog(int backlog) {
             if (backlog <= 0) throw new IllegalArgumentException("Backlog must be > 0");
             this.backlog = backlog;
             return this;
         }
+
+        /**
+         * Specifies a logger.
+         *
+         * @param logger the logger instance
+         * @return this options instance
+         */
         public Options andLogger(Logger logger) {
             this.logger = logger;
             return this;
         }
+
+        /**
+         * Specifies the address to use when creating the server socket.
+         *
+         * @param address the address to bind to
+         * @return this options instance
+         */
         public Options andAddress(InetAddress address) {
             this.address = address;
             return this;
         }
+
+        /**
+         * Specifies the maximum frame size. The maximum frame size must be at least 126, as it doesn't make much
+         * sense to create frame fragments smaller than that.
+         *
+         * @param size maximum frame size
+         * @return this options instance
+         */
         public Options andMaxFrameSize(int size) {
             if (size <= 125) throw new IllegalArgumentException("Max frame size must be at least 126.");
             this.maxFrameSize = size;
@@ -792,6 +835,9 @@ public class Server {
         }
     }
 
+    /**
+     * Log level for logging.
+     */
     public enum LogLevel {
         TRACE(0),
         DEBUG(10),
@@ -806,18 +852,62 @@ public class Server {
         }
     }
 
+    /**
+     * A simple interface for logging.
+     */
     public interface Logger {
+        /**
+         * Logs a message at a certain level. Note that this method is not called if {@see isEnabledAt(LogLevel)}
+         * returns {@code false} for the given level.
+         *
+         * @param level the log level
+         * @param message the message to log
+         * @param error an optional error
+         */
         void log(LogLevel level, String message, Throwable error);
+
+        /**
+         * Determines if logging is enabled for the given level.
+         *
+         * @param level a log level
+         * @return {@code true} if logging is enabled at the level, {@code false} otherwise
+         */
         boolean isEnabledAt(LogLevel level);
     }
 
+    /**
+     * Represents a WebSocket client and exposes methods that makes it possible to interact with the client, as well
+     * as methods for getting information about the client and how it requested the handled resource.
+     *
+     * Methods on this interface can be invoked from any thread.
+     */
     public interface WebSocketClient {
-        void ping(byte[] data) throws IOException;
+        /**
+         * Sends a ping to the client. This can be used to send keep-alive messages to the client.
+         *
+         * @throws IOException on I/O failure while sending the ping
+         */
+        void ping() throws IOException;
 
-        void close(int code, String reason) throws IOException;
+        /**
+         * Performs a clean close of the connection to the client.
+         */
+        void close();
 
+        /**
+         * Sends a text message to the client.
+         *
+         * @param text the text to send
+         * @throws IOException on I/O failure while sending
+         */
         void sendTextMessage(String text) throws IOException;
 
+        /**
+         * Sends binary data to the client.
+         *
+         * @param data the data to send
+         * @throws IOException on I/O failure while sending
+         */
         void sendBinaryData(byte[] data) throws IOException;
 
         /**
@@ -857,9 +947,24 @@ public class Server {
         String fragment();
     }
 
+    /**
+     * A handler for a WebSocket client connection. A new handler instance will be created for each connected client.
+     * Handlers are invoked on the handler executor passed to the {@code Server} constructor.
+     */
     public interface WebSocketHandler {
+        /**
+         * Invoked right after construction.
+         *
+         * @param client instance for interacting with the client
+         */
         void onOpened(WebSocketClient client);
 
+        /**
+         * Invoked when the client closes the connection in an orderly fashion.
+         *
+         * @param code the close code the client used, if any, otherwise 1000 (Normal Closure).
+         * @param reason the close reason the client used, if any. May be {@code null}.
+         */
         void onClosedByClient(int code, String reason);
 
         /**
@@ -870,10 +975,25 @@ public class Server {
          */
         void onClosedByServer(int code, String reason);
 
+        /**
+         * Invoked when the connection is closed abruptly because of an error.
+         *
+         * @param t the error that occurred
+         */
         void onFailure(Throwable t);
 
+        /**
+         * Invoked when the client sends a text message.
+         *
+         * @param text the message
+         */
         void onTextMessage(String text);
 
+        /**
+         * Invoked when the client sends binary data.
+         *
+         * @param data the data
+         */
         void onBinaryData(byte[] data);
     }
 }
