@@ -25,7 +25,7 @@ import java.util.function.Supplier;
  * A WebSocket server. Usage:
  *
  * 1. Create an instance of this class.
- * 2. Add one or more handlers using the {@see Server#addHandler(Server.WebSocketHandler)} method.
+ * 2. Add one or more handler factories using the {@see Server#addHandlerFactory(Supplier)} method.
  * 3. Start the server using {@see Server#start()}.
  * 4. Connect clients...
  * 5. Stop using {@see Server#stop()}.
@@ -46,7 +46,7 @@ public class Server {
     private final Logger logger;
 
     private ServerSocket serverSocket;
-    private Map<String, WebSocketHandler> handlers = new HashMap<>();
+    private Map<String, Supplier<WebSocketHandler>> handlerFactories = new HashMap<>();
 
     /**
      * Constructs a new server instance but doesn't start listening for client connections.
@@ -84,17 +84,18 @@ public class Server {
     }
 
     /**
-     * Adds a handler for a specific endpoint. Handlers must be added before the server is started. The endpoint must
-     * match a requested resource exactly to be used. The root handler must thus be registered for the "/" endpoint.
+     * Adds a factory for creating handlerFactories for a specific endpoint. Handler factories must be added before the server
+     * is started. The endpoint must match a requested resource exactly to be used. The root handler factory must thus
+     * be registered for the "/" endpoint.
      *
      * @param endpoint non-{@code null}, non-empty endpoint
-     * @param handler a handler
+     * @param handlerFactory a handler factory
      * @exception IllegalStateException if the server has been started
      */
-    public void addHandler(String endpoint, WebSocketHandler handler) {
+    public void addHandlerFactory(String endpoint, Supplier<WebSocketHandler> handlerFactory) {
         if (endpoint == null || "".equals(endpoint)) throw new IllegalArgumentException("Endpoint must be non-empty.");
-        if (serverSocket != null) throw new IllegalStateException("Please add handlers before starting the server.");
-        handlers.put(endpoint, handler);
+        if (serverSocket != null) throw new IllegalStateException("Please add handler factories before starting the server.");
+        handlerFactories.put(endpoint, handlerFactory);
     }
 
     /**
@@ -211,8 +212,9 @@ public class Server {
             if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
             String endpoint = headers.endpoint;
 
-            handler = handlers.get(endpoint);
-            if (handler == null) throw new FileNotFoundException("Unknown endpoint: " + endpoint);
+            Supplier<WebSocketHandler> handlerFactory = handlerFactories.get(endpoint);
+            if (handlerFactory == null || (handler = handlerFactory.get()) == null)
+                throw new FileNotFoundException("Unknown endpoint: " + endpoint);
 
             lazyLog(LogLevel.INFO, () -> String.format("New WebSocket client from %s at endpoint '%s'.",
                         clientSocket.getRemoteSocketAddress(), endpoint));

@@ -31,7 +31,7 @@ public class EchoServer {
         };
         Server ws = new Server(executor, executor,
                 Server.Options.withPort(9001).andLogger(logger));
-        ws.addHandler("/", new EchoHandler());
+        ws.addHandlerFactory("/", EchoHandler::new);
         try {
             System.out.println("Starting");
             ws.start();

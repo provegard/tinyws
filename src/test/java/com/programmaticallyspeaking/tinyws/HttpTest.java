@@ -28,7 +28,7 @@ public class HttpTest {
     public void startServer() throws IOException {
         Executor executor = Executors.newCachedThreadPool();
         Server ws = new Server(executor, executor, Server.Options.withPort(59001));
-        ws.addHandler("/", new NoopHandler());
+        ws.addHandlerFactory("/", NoopHandler::new);
         ws.start();
         server = ws;
     }
@@ -36,6 +36,11 @@ public class HttpTest {
     @AfterClass
     public void stopServer() {
         if (server != null) server.stop();
+    }
+
+    @BeforeMethod
+    public void reset() {
+        NoopHandler.count = 0;
     }
 
     @AfterMethod
@@ -124,7 +129,18 @@ public class HttpTest {
         assertEquals(conn.getResponseCode(), 400);
     }
 
+    @Test
+    public void Proper_GET_should_create_one_handler_per_request() throws Exception {
+        sendGET("/", c -> {}).getResponseCode();
+        sendGET("/", c -> {}).getResponseCode();
+        assertEquals(NoopHandler.count, 2);
+    }
+
     private static class NoopHandler implements Server.WebSocketHandler {
+        static volatile int count = 0;
+        NoopHandler() {
+            count++;
+        }
 
         public void onOpened(Server.WebSocketClient client) {}
 
