@@ -745,7 +745,7 @@ public class Server {
             return new Options(port);
         }
         public Options andBacklog(int backlog) {
-            if (backlog < 0) throw new IllegalArgumentException("Backlog must be >= 0");
+            if (backlog <= 0) throw new IllegalArgumentException("Backlog must be > 0");
             this.backlog = backlog;
             return this;
         }
