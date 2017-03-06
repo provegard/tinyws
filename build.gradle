@@ -1,11 +1,18 @@
-// Apply the java plugin to add support for Java
-apply plugin: 'java'
-apply plugin: 'application'
+allprojects {
+    apply plugin: 'java'
+    apply plugin: 'application'
 
-sourceCompatibility = JavaVersion.VERSION_1_8
-targetCompatibility = JavaVersion.VERSION_1_8
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
 
-mainClassName = "com.programmaticallyspeaking.tinyws.TinyWS"
+project(':examples') {
+    mainClassName = "com.programmaticallyspeaking.tinyws.examples.EchoServer"
+
+    dependencies {
+        compile rootProject
+    }
+}
 
 repositories {
     jcenter()
@@ -19,7 +26,7 @@ test {
     useTestNG()
 
     // Always run tests!
-    outputs.upToDateWhen {false}
+    outputs.upToDateWhen { false }
 
     // From: http://stackoverflow.com/questions/3963708/gradle-how-to-display-test-results-in-the-console-in-real-time#answer-36130467
     testLogging {
@@ -49,3 +56,7 @@ test {
     }
 }
 
+// Delegate run to the examples project
+task run(overwrite: true) {
+    project(':examples').run
+}
