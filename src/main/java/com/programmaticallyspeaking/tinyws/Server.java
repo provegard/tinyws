@@ -35,7 +35,7 @@ import java.util.function.Supplier;
  */
 public class Server {
     public static final String ServerName = "TinyWS Server";
-    public static final String ServerVersion = "0.0.1"; //TODO: Get from resource
+    public static final String ServerVersion = "@VERSION@";
 
     private static final String HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     private static final int SupportedVersion = 13;

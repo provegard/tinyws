@@ -67,3 +67,16 @@ test {
 task run(overwrite: true) {
     project(':examples').run
 }
+
+import org.apache.tools.ant.filters.ReplaceTokens
+
+task preprocess(type: Copy) {
+    from 'src/main/java'
+    into 'build/preprocessed-src'
+    filter(ReplaceTokens, tokens: [VERSION: version])
+}
+
+compileJava {
+    dependsOn preprocess
+    source = preprocess.destinationDir
+}
