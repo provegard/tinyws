@@ -146,6 +146,8 @@ public class HttpTest {
 
         public void onClosedByClient(int code, String reason) {}
 
+        public void onClosedByServer(int code, String reason) {}
+
         public void onFailure(Throwable t) {}
 
         public void onTextMessage(String text) {}

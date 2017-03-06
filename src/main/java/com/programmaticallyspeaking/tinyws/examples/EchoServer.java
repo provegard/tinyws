@@ -54,6 +54,10 @@ public class EchoServer {
         }
 
         @Override
+        public void onClosedByServer(int code, String reason) {
+        }
+
+        @Override
         public void onFailure(Throwable t) {
             t.printStackTrace(System.err);
         }
