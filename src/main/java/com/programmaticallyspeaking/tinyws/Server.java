@@ -175,7 +175,7 @@ public class Server {
                 lazyLog(LogLevel.DEBUG, () -> String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
                         ex.debugDetails != null ? (" because: " + ex.debugDetails) : ""));
                 doIgnoringExceptions(() -> frameWriter.writeClose(ex.code, ex.reason));
-                invokeHandler(h -> h.onClosedByClient(ex.code, ex.reason));
+                invokeHandler(h -> h.onClosedByServer(ex.code, ex.reason));
             } catch (MethodNotAllowedException ex) {
                 lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s used a non-allowed method: %s",
                             clientSocket.getRemoteSocketAddress(), ex.method));
@@ -279,6 +279,9 @@ public class Server {
 
                     // 1000 is normal close
                     int i = cd.code != null ? cd.code : 1000;
+
+                    invokeHandler(h -> h.onClosedByClient(i, cd.reason));
+
                     throw new WebSocketError(i, "", null);
                 case 9:
                     // Ping, send pong!
@@ -858,6 +861,14 @@ public class Server {
         void onOpened(WebSocketClient client);
 
         void onClosedByClient(int code, String reason);
+
+        /**
+         * Invoked when the server closes the connection in an orderly fashion, but must likely because of an error.
+         *
+         * @param code the close code sent to the client
+         * @param reason the close reason sent to the client
+         */
+        void onClosedByServer(int code, String reason);
 
         void onFailure(Throwable t);
 
