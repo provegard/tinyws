@@ -160,7 +160,7 @@ public class Server {
             in = clientSocket.getInputStream();
 
             payloadCoder = new PayloadCoder();
-            frameWriter = new FrameWriter(out, payloadCoder);
+            frameWriter = new FrameWriter(out, payloadCoder, options.maxFrameSize);
         }
 
         private void invokeHandler(Consumer<WebSocketHandler> fun) {
@@ -256,19 +256,7 @@ public class Server {
                 }
             }
 
-            Frame result;
-
-            if (frameBatch.size() > 1) {
-                // Combine payloads!
-                int totalLength = frameBatch.stream().mapToInt(f -> f.payloadData.length).sum();
-                byte[] allTheData = new byte[totalLength];
-                int offs = 0;
-                for (Frame frame : frameBatch) {
-                    System.arraycopy(frame.payloadData, 0, allTheData, offs, frame.payloadData.length);
-                    offs += frame.payloadData.length;
-                }
-                result = new Frame(firstFrame.opCode, allTheData, true);
-            } else result = lastOne;
+            Frame result = frameBatch.size() > 1 ? Frame.merge(frameBatch) : lastOne;
 
             frameBatch.clear();
 
@@ -362,7 +350,7 @@ public class Server {
         }
     }
 
-    private static class Frame {
+    static class Frame {
 
         final int opCode;
         final byte[] payloadData;
@@ -466,6 +454,17 @@ public class Server {
             int code = (int) toLong(payloadData, 0, 2);
             String reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
             return new CloseData(code, reason);
+        }
+
+        static Frame merge(List<Frame> frameBatch) {                // Combine payloads!
+            int totalLength = frameBatch.stream().mapToInt(f -> f.payloadData.length).sum();
+            byte[] allTheData = new byte[totalLength];
+            int offs = 0;
+            for (Frame frame : frameBatch) {
+                System.arraycopy(frame.payloadData, 0, allTheData, offs, frame.payloadData.length);
+                offs += frame.payloadData.length;
+            }
+            return new Frame(frameBatch.get(0).opCode, allTheData, true);
         }
     }
 
@@ -598,10 +597,12 @@ public class Server {
     static class FrameWriter {
         private final OutputStream out;
         private final PayloadCoder payloadCoder;
+        private final int maxFrameSize;
 
-        FrameWriter(OutputStream out, PayloadCoder payloadCoder) {
+        FrameWriter(OutputStream out, PayloadCoder payloadCoder, int maxFrameSize) {
             this.out = out;
             this.payloadCoder = payloadCoder;
+            this.maxFrameSize = maxFrameSize;
         }
 
         void writeCloseFrame(int code, String reason) throws IOException {
@@ -615,11 +616,11 @@ public class Server {
 
         void writeTextFrame(String text) throws IOException {
             byte[] s = payloadCoder.encode(text);
-            writeFrame(1, s);
+            writePossiblyFragmentedFrames(1, s);
         }
 
         void writeBinaryFrame(byte[] data) throws IOException {
-            writeFrame(2, data);
+            writePossiblyFragmentedFrames(2, data);
         }
 
         void writePingFrame(byte[] data) throws IOException {
@@ -630,6 +631,25 @@ public class Server {
             writeFrame(10, data);
         }
 
+        void writePossiblyFragmentedFrames(int opCode, byte[] data) throws IOException {
+            // https://tools.ietf.org/html/rfc6455#section-5.6 implies that a single frame may contain an UTF-8
+            // sequence that by itself is invalid, as long as the entire message text is valid UTF-8.
+            if (maxFrameSize == 0 || data == null || data.length <= maxFrameSize) {
+                writeFrame(opCode, data);
+            } else {
+                int offset = 0;
+                while (offset < data.length) {
+                    int len = Math.min(data.length - offset, maxFrameSize);
+                    writeFrame(opCode, data, offset, len);
+                    offset += len;
+                }
+            }
+        }
+
+        void writeFrame(int opCode, byte[] data) throws IOException {
+            writeFrame(opCode, data, 0, data != null ? data.length : 0);
+        }
+
         /**
          * Writes a frame to the output stream. Since FrameWriter is handed out to potentially different threads,
          * this method is synchronized.
@@ -638,14 +658,18 @@ public class Server {
          * @param data frame data
          * @throws IOException thrown if writing to the socket fails
          */
-        synchronized void writeFrame(int opCode, byte[] data) throws IOException {
-            int firstByte = 128 | opCode; // FIN + opCode
-            int dataLen = data != null ? data.length : 0;
+        synchronized void writeFrame(int opCode, byte[] data, int offset, int len) throws IOException {
+            int totalLen = data != null ? data.length : 0;
+            boolean isFirstFrame = offset == 0;
+            boolean isFinalFrame = offset + len == totalLen;
+
+            int firstByte = isFirstFrame ? opCode : 0;
+            if (isFinalFrame) firstByte |= 128; // FIN
             int secondByte;
             int extraLengthBytes = 0;
-            if (dataLen < 126) {
-                secondByte = dataLen; // no masking
-            } else if (dataLen < 65536) {
+            if (len < 126) {
+                secondByte = len;
+            } else if (len < 65536) {
                 secondByte = 126;
                 extraLengthBytes = 2;
             } else {
@@ -655,9 +679,9 @@ public class Server {
             out.write(firstByte);
             out.write(secondByte);
             if (extraLengthBytes > 0) {
-                out.write(numberToBytes(data.length, extraLengthBytes));
+                out.write(numberToBytes(len, extraLengthBytes));
             }
-            if (data != null) out.write(data);
+            if (data != null) out.write(data, offset, len);
             out.flush();
         }
     }
@@ -737,6 +761,7 @@ public class Server {
         int port;
         Logger logger;
         InetAddress address;
+        int maxFrameSize;
 
         private Options(int port) {
             this.port = port;
@@ -755,6 +780,11 @@ public class Server {
         }
         public Options andAddress(InetAddress address) {
             this.address = address;
+            return this;
+        }
+        public Options andMaxFrameSize(int size) {
+            if (size <= 125) throw new IllegalArgumentException("Max frame size must be at least 126.");
+            this.maxFrameSize = size;
             return this;
         }
     }
