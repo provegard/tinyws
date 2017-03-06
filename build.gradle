@@ -1,3 +1,7 @@
+plugins {
+    id 'com.palantir.git-version' version '0.5.3'
+}
+
 allprojects {
     apply plugin: 'java'
     apply plugin: 'application'
@@ -5,6 +9,9 @@ allprojects {
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
 }
+
+group 'com.programmaticallyspeaking'
+version gitVersion()
 
 project(':examples') {
     mainClassName = "com.programmaticallyspeaking.tinyws.examples.EchoServer"
