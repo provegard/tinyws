@@ -171,7 +171,7 @@ public class Server {
         public void run() {
             try {
                 communicate();
-            } catch (WebSocketError ex) {
+            } catch (WebSocketClosure ex) {
                 lazyLog(LogLevel.DEBUG, () -> String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
                         ex.debugDetails != null ? (" because: " + ex.debugDetails) : ""));
                 doIgnoringExceptions(() -> frameWriter.writeClose(ex.code, ex.reason));
@@ -243,7 +243,7 @@ public class Server {
         private void handleBatch(List<Frame> frameBatch) throws IOException {
             Frame firstFrame = frameBatch.get(0);
 
-            if (firstFrame.opCode == 0) throw WebSocketError.protocolError("Continuation frame with nothing to continue.");
+            if (firstFrame.opCode == 0) throw WebSocketClosure.protocolError("Continuation frame with nothing to continue.");
 
             Frame lastOne = frameBatch.get(frameBatch.size() - 1);
             lazyLog(LogLevel.TRACE, lastOne::toString);
@@ -255,7 +255,7 @@ public class Server {
                     handleResultFrame(lastOne);
                     return;
                 } else if (lastOne.opCode > 0) {
-                    throw WebSocketError.protocolError("Continuation frame must have opcode 0.");
+                    throw WebSocketClosure.protocolError("Continuation frame must have opcode 0.");
                 }
             }
 
@@ -278,14 +278,14 @@ public class Server {
                 case 8:
                     CloseData cd = result.toCloseData(payloadCoder);
 
-                    if (cd.hasInvalidCode()) throw WebSocketError.protocolError("Invalid close frame code: " + cd.code);
+                    if (cd.hasInvalidCode()) throw WebSocketClosure.protocolError("Invalid close frame code: " + cd.code);
 
                     // 1000 is normal close
                     int i = cd.code != null ? cd.code : 1000;
 
                     invokeHandler(h -> h.onClosedByClient(i, cd.reason));
 
-                    throw new WebSocketError(i, "", "closed by client", true);
+                    throw WebSocketClosure.fromClient(i);
                 case 9:
                     // Ping, send pong!
                     logger.log(LogLevel.TRACE, "Got ping frame, sending pong.", null);
@@ -296,7 +296,7 @@ public class Server {
                     logger.log(LogLevel.TRACE, "Ignoring unsolicited pong frame.", null);
                     break;
                 default:
-                    throw WebSocketError.protocolError("Invalid opcode: " + result.opCode);
+                    throw WebSocketClosure.protocolError("Invalid opcode: " + result.opCode);
             }
         }
 
@@ -418,15 +418,15 @@ public class Server {
             int firstByte = readUnsignedByte(in);
             boolean isFin = (firstByte & 128) == 128;
             boolean hasZeroReserved = (firstByte & 112) == 0;
-            if (!hasZeroReserved) throw WebSocketError.protocolError("Non-zero reserved bits in 1st byte: " + (firstByte & 112));
+            if (!hasZeroReserved) throw WebSocketClosure.protocolError("Non-zero reserved bits in 1st byte: " + (firstByte & 112));
             int opCode = (firstByte & 15);
             boolean isControlFrame = (opCode & 8) == 8;
             int secondByte = readUnsignedByte(in);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
             if (isControlFrame) {
-                if (len > 125) throw WebSocketError.protocolError("Control frame length exceeding 125 bytes.");
-                if (!isFin) throw WebSocketError.protocolError("Fragmented control frame.");
+                if (len > 125) throw WebSocketClosure.protocolError("Control frame length exceeding 125 bytes.");
+                if (!isFin) throw WebSocketClosure.protocolError("Fragmented control frame.");
             }
             if (len == 126) {
                 // 2 bytes of extended len
@@ -435,7 +435,7 @@ public class Server {
             } else if (len == 127) {
                 // 8 bytes of extended len
                 long tmp = toLong(readBytes(in, 8));
-                if (tmp > Integer.MAX_VALUE) throw WebSocketError.protocolError("Frame length greater than 0x7fffffff not supported.");
+                if (tmp > Integer.MAX_VALUE) throw WebSocketClosure.protocolError("Frame length greater than 0x7fffffff not supported.");
                 len = (int) tmp;
             }
             byte[] maskingKey = isMasked ? readBytes(in, 4) : null;
@@ -453,10 +453,10 @@ public class Server {
             return bytes;
         }
 
-        CloseData toCloseData(PayloadCoder payloadCoder) throws WebSocketError {
+        CloseData toCloseData(PayloadCoder payloadCoder) throws WebSocketClosure {
             if (opCode != 8) throw new IllegalStateException("Not a close frame: " + opCode);
             if (payloadData.length == 0) return new CloseData(null, null);
-            if (payloadData.length == 1) throw WebSocketError.protocolError("Invalid close frame payload length (1).");
+            if (payloadData.length == 1) throw WebSocketClosure.protocolError("Invalid close frame payload length (1).");
             int code = (int) toLong(payloadData, 0, 2);
             String reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
             return new CloseData(code, reason);
@@ -553,7 +553,7 @@ public class Server {
         private final Charset charset = StandardCharsets.UTF_8;
         private final CharsetDecoder decoder = charset.newDecoder();
 
-        String decode(byte[] bytes) throws WebSocketError {
+        String decode(byte[] bytes) throws WebSocketClosure {
             return decode(bytes, 0, bytes.length);
         }
 
@@ -564,15 +564,15 @@ public class Server {
          * @param offset offset into the array where to start decoding
          * @param len length of data to decode
          * @return the decoded string
-         * @throws WebSocketError (1007) thrown if the data are not valid UTF-8
+         * @throws WebSocketClosure (1007) thrown if the data are not valid UTF-8
          */
-        synchronized String decode(byte[] bytes, int offset, int len) throws WebSocketError {
+        synchronized String decode(byte[] bytes, int offset, int len) throws WebSocketClosure {
             decoder.reset();
             try {
                 CharBuffer buf = decoder.decode(ByteBuffer.wrap(bytes, offset, len));
                 return buf.toString();
             } catch (Exception ex) {
-                throw WebSocketError.invalidFramePayloadData();
+                throw WebSocketClosure.invalidFramePayloadData();
             }
         }
 
@@ -581,24 +581,27 @@ public class Server {
         }
     }
 
-    static class WebSocketError extends IOException {
+    static class WebSocketClosure extends IOException {
         final int code;
         final String reason;
         final String debugDetails;
         final boolean closedByClient;
 
-        WebSocketError(int code, String reason, String debugDetails, boolean closedByClient) {
+        private WebSocketClosure(int code, String reason, String debugDetails, boolean closedByClient) {
             this.code = code;
             this.reason = reason;
             this.debugDetails = debugDetails;
             this.closedByClient = closedByClient;
         }
 
-        static WebSocketError protocolError(String debugDetails) {
-            return new WebSocketError(1002, "Protocol error", debugDetails, false);
+        static WebSocketClosure fromClient(int code) {
+            return new WebSocketClosure(code, "", "Closed by client", true);
         }
-        static WebSocketError invalidFramePayloadData() {
-            return new WebSocketError(1007, "Invalid frame payload data", null, false);
+        static WebSocketClosure protocolError(String debugDetails) {
+            return new WebSocketClosure(1002, "Protocol error", debugDetails, false);
+        }
+        static WebSocketClosure invalidFramePayloadData() {
+            return new WebSocketClosure(1007, "Invalid frame payload data", null, false);
         }
     }
 
