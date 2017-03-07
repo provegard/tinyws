@@ -175,7 +175,10 @@ public class Server {
                 lazyLog(LogLevel.DEBUG, () -> String.format("Closing with code %d (%s)%s", ex.code, ex.reason,
                         ex.debugDetails != null ? (" because: " + ex.debugDetails) : ""));
                 doIgnoringExceptions(() -> frameWriter.writeClose(ex.code, ex.reason));
-                invokeHandler(h -> h.onClosedByServer(ex.code, ex.reason));
+                // If the connection was closed by the client, we expect onClosedByClient to have been invoked and
+                // we must *not* invoke onClosedByServer since that would be a lie...
+                if (!ex.closedByClient)
+                    invokeHandler(h -> h.onClosedByServer(ex.code, ex.reason));
             } catch (MethodNotAllowedException ex) {
                 lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s used a non-allowed method: %s",
                             clientSocket.getRemoteSocketAddress(), ex.method));
@@ -282,7 +285,7 @@ public class Server {
 
                     invokeHandler(h -> h.onClosedByClient(i, cd.reason));
 
-                    throw new WebSocketError(i, "", null);
+                    throw new WebSocketError(i, "", "closed by client", true);
                 case 9:
                     // Ping, send pong!
                     logger.log(LogLevel.TRACE, "Got ping frame, sending pong.", null);
@@ -582,18 +585,20 @@ public class Server {
         final int code;
         final String reason;
         final String debugDetails;
+        final boolean closedByClient;
 
-        WebSocketError(int code, String reason, String debugDetails) {
+        WebSocketError(int code, String reason, String debugDetails, boolean closedByClient) {
             this.code = code;
             this.reason = reason;
             this.debugDetails = debugDetails;
+            this.closedByClient = closedByClient;
         }
 
         static WebSocketError protocolError(String debugDetails) {
-            return new WebSocketError(1002, "Protocol error", debugDetails);
+            return new WebSocketError(1002, "Protocol error", debugDetails, false);
         }
         static WebSocketError invalidFramePayloadData() {
-            return new WebSocketError(1007, "Invalid frame payload data", null);
+            return new WebSocketError(1007, "Invalid frame payload data", null, false);
         }
     }
 
