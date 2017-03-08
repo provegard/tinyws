@@ -10,6 +10,8 @@ allprojects {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
+apply plugin: 'maven-publish'
+
 group 'com.programmaticallyspeaking'
 version gitVersion()
 
@@ -84,4 +86,17 @@ task preprocess(type: Copy) {
 compileJava {
     dependsOn preprocess
     source = preprocess.destinationDir
+}
+
+publishing {
+    repositories {
+        maven {
+            url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+        }
+    }
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
 }
