@@ -10,7 +10,9 @@ allprojects {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
-apply plugin: 'maven-publish'
+// maven-publish cannot yet do signing
+apply plugin: 'maven'
+apply plugin: 'signing'
 
 group 'com.programmaticallyspeaking'
 version gitVersion()
@@ -21,10 +23,13 @@ project(':examples') {
     dependencies {
         compile rootProject
     }
+
+    uploadArchives.enabled = false
 }
 
 repositories {
-    jcenter()
+    mavenCentral()
+    mavenLocal()
 }
 
 dependencies {
@@ -33,6 +38,8 @@ dependencies {
     testCompile "org.java-websocket:Java-WebSocket:1.3.0"
     testCompile "org.jsoup:jsoup:1.8.3"
     testCompile group: 'org.assertj', name: 'assertj-core', version: '3.6.2'
+
+//    deployerJars "org.apache.maven.wagon:wagon-http:2.2"
 }
 
 test {
@@ -88,15 +95,58 @@ compileJava {
     source = preprocess.destinationDir
 }
 
-publishing {
+artifacts {
+    archives jar
+//    archives javadocJar
+//    archives sourcesJar
+}
+
+// TODO: Why does signing need this??
+mainClassName = ""
+
+signing {
+    sign configurations.archives
+}
+
+// https://discuss.gradle.org/t/how-to-exclude-zip-only-from-archives-for-maven-repo-upload/13354/2
+configurations.archives.with {
+    artifacts.remove artifacts.find { it.archiveTask.is distZip }
+    artifacts.remove artifacts.find { it.archiveTask.is distTar }
+}
+
+uploadArchives {
     repositories {
-        maven {
-            url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
-        }
-    }
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
+        mavenDeployer {
+            if (version.contains("dirty")) {
+                repository(url: "file://$buildDir/repo")
+            } else {
+                repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2") {
+                    authentication(userName: ossrhUser, password: ossrhPassword)
+                }
+            }
+
+            pom.project {
+                description "Tiny WebSocket server for Java 8"
+                url "https://github.com/provegard/tinyws"
+                scm {
+                    url "https://github.com/provegard/tinyws.git"
+                    connection "scm:git@github.com:provegard/tinyws.git"
+                    developerConnection "scm:git@github.com:provegard/tinyws.git"
+                }
+                licenses {
+                    license {
+                        name "The MIT License"
+                        url "http://www.opensource.org/licenses/MIT"
+                        distribution "repo"
+                    }
+                }
+                developers {
+                    developer {
+                        id "provegard"
+                        name "Per Rovegård"
+                    }
+                }
+            }
         }
     }
 }
