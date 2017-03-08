@@ -19,22 +19,43 @@ It passes all tests of [Autobahn|Testsuite](https://github.com/crossbario/autoba
 Features:
 
 * Standards-compliant (according to AutoBahn|Testsuite at least)
-* Configurable address and port
-* Tiny - one file
+* Tiny&mdash;one file
 * NO external dependencies
 * Requires Java 8
 * Multiple endpoints
-* Maximum frame size can be configured
+* Configurable Maximum frame size (controls fragmentation)
+* Configurable address and port
+* Configurable backlog
+* Logging via simple interface&mdash;no dependency on any particilar log framework
 
 Limitations:
 
 * No HTTPS
 * No frame compression support
+* No extension support
 * Maximum payload size is 0x7fffffff (2147483647) bytes
+* Only talks protocol version 13 (mandated by [RFC 6455](https://tools.ietf.org/html/rfc6455))
+
+## Running tests
+
+    ./gradlew test
+    
+Note that the tests requires [wstest](https://github.com/crossbario/autobahn-testsuite) to be
+installed and available on the path.
+    
+## Examples
+
+The _echoserver_ folder contains an&mdash;drum roll&mdash;echo server!
+
+## Usage/documentation
+
+TBD
 
 ## Author
 
-Per Rovegård, @provegard
+Per Rovegård
+
+Twitter: @provegard
 
 ## License
 
