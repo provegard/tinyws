@@ -29,6 +29,8 @@ dependencies {
     testCompile 'org.testng:testng:6.9.10'
     testCompile "org.mockito:mockito-core:2.7.14"
     testCompile "org.java-websocket:Java-WebSocket:1.3.0"
+    testCompile "org.jsoup:jsoup:1.8.3"
+    testCompile group: 'org.assertj', name: 'assertj-core', version: '3.6.2'
 }
 
 test {
@@ -40,7 +42,8 @@ test {
     // From: http://stackoverflow.com/questions/3963708/gradle-how-to-display-test-results-in-the-console-in-real-time#answer-36130467
     testLogging {
         // set options for log level LIFECYCLE
-        events "passed", "skipped", "failed", "standardOut"
+//        events "passed", "skipped", "failed", "standardOut"
+        events "passed", "skipped", "failed", "standardError"
         showExceptions true
         exceptionFormat "full"
         showCauses true

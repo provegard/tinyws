@@ -22,11 +22,15 @@ public abstract class ClientTestBase {
     protected String host = "localhost";
     protected int port;
 
+    protected WebSocketHandler createHandler() {
+        return mock(WebSocketHandler.class);
+    }
+
     private Server startServer(int port) throws IOException {
         Executor executor = Executors.newCachedThreadPool();
         Server ws = new Server(executor, executor, Server.Options.withPort(port));
         ws.addHandlerFactory("/", () -> {
-            WebSocketHandler h = mock(WebSocketHandler.class);
+            WebSocketHandler h = createHandler();
             createdHandlers.add(h);
             return h;
         });
