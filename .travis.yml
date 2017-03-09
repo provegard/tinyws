@@ -1,6 +1,6 @@
 language: java
 
-pip install wstest
+install: "pip install wstest"
 
 # Should be default:
 # ./gradlew check
