@@ -3,12 +3,9 @@ language: java
 # Required for installing pycparser, which is an autobahntestsuite dependency
 sudo: required
 
-# Prevent this warning/error for urllib3:
-# InsecurePlatformWarning: A true SSLContext object is not available. [...]
-install: "pip install requests[security]"
-
 # Installs the 'wstest' application which is required to run all the tests.
-install: "pip install autobahntestsuite"
+# requests==2.5.3: Prevent this warning/error for urllib3: InsecurePlatformWarning: A true SSLContext object is not available. [...]
+install: "pip install autobahntestsuite requests==2.5.3"
 
 # Should be default:
 # ./gradlew check
