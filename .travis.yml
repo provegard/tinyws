@@ -1,6 +1,6 @@
 language: java
 
-install: "pip install wstest"
+install: "pip install autobahntestsuite"
 
 # Should be default:
 # ./gradlew check
