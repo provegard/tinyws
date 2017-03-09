@@ -24,11 +24,13 @@ import java.util.function.Supplier;
 /**
  * A WebSocket server. Usage:
  *
- * 1. Create an instance of this class.
- * 2. Add one or more handler factories using the {@see Server#addHandlerFactory(Supplier)} method.
- * 3. Start the server using {@see Server#start()}.
- * 4. Connect clients...
- * 5. Stop using {@see Server#stop()}.
+ * <ol>
+ * <li>Create an instance of this class.
+ * <li>Add one or more handler factories using the {@link Server#addHandlerFactory(String, Supplier)} method.
+ * <li>Start the server using {@link Server#start()}.
+ * <li>Connect clients...
+ * <li>Stop using {@link Server#stop()}.
+ * </ol>
  *
  * The server implementation passes all tests of <a href="https://github.com/crossbario/autobahn-testsuite">
  * Autobahn|Testsuite</a> (version 0.10.9) except 12.* and 13.* (compression using the permessage-deflate extension).
@@ -51,7 +53,7 @@ public class Server {
     /**
      * Constructs a new server instance but doesn't start listening for client connections.
      *
-     * @param mainExecutor the {@see Executor} instance that will be used to create the main listener task as well as
+     * @param mainExecutor the {@link Executor} instance that will be used to create the main listener task as well as
      *                     tasks for handling connected clients. Please note that each task will use excessive blocking
      *                     I/O, so use an appropriate executor.
      * @param handlerExecutor the {@code Executor} instance that will be used to invoke handlers.
@@ -853,6 +855,9 @@ public class Server {
         WARN(50),
         ERROR(100);
 
+        /**
+         * Numeric level corresponding to this log level. ERROR has the highest level and TRACE has the lowest.
+         */
         public final int level;
 
         LogLevel(int level) {
@@ -865,7 +870,7 @@ public class Server {
      */
     public interface Logger {
         /**
-         * Logs a message at a certain level. Note that this method is not called if {@see isEnabledAt(LogLevel)}
+         * Logs a message at a certain level. Note that this method is not called if {@link #isEnabledAt(LogLevel)}
          * returns {@code false} for the given level.
          *
          * @param level the log level
