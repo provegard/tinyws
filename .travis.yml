@@ -1,10 +1,5 @@
 language: java
 
-# Required for installing pycparser, which is an autobahntestsuite dependency
-#sudo: required
-
+# Note: Latest Twisted caused the installation to fail on Travis.
 install:
 - pip install --user Twisted==16.4.1 autobahntestsuite
-
-# Should be default:
-# ./gradlew check

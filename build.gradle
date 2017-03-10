@@ -129,7 +129,7 @@ uploadArchives {
 
             if (version.contains("dirty")) {
                 repository(url: "file://$buildDir/repo")
-            } else {
+            } else if (project.hasProperty("ossrhUser") && project.hasProperty("ossrhPassword")) {
                 repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2") {
                     authentication(userName: ossrhUser, password: ossrhPassword)
                 }
