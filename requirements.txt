@@ -1,0 +1,4 @@
+# Install file for pip, needed to install the wstest tool which is used for running some of the tests.
+# Note: Latest Twisted caused the installation to fail on Travis.
+Twisted==16.4.1
+autobahntestsuite==0.7.5
