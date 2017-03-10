@@ -137,6 +137,11 @@ public class Server {
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
+                
+                // We need this on Linux. Without it the close frame sent just before closing the
+                // socket won't be seen by the WebSocket client.
+                clientSocket.setTcpNoDelay(true);
+                
                 mainExecutor.execute(new ClientHandler(clientSocket));
             }
         } catch (SocketException e) {
