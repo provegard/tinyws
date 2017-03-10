@@ -7,6 +7,8 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.BeforeSuite;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.BindException;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -28,7 +30,18 @@ public abstract class ClientTestBase {
 
     private Server startServer(int port) throws IOException {
         Executor executor = Executors.newCachedThreadPool();
-        Server ws = new Server(executor, executor, Server.Options.withPort(port));
+        Server.Logger logger = new Server.Logger() {
+            public void log(Server.LogLevel level, String message, Throwable error) {
+                PrintStream os = level == Server.LogLevel.ERROR ? System.err : System.out;
+                os.println("TINYWS - " + level + ": " + message);
+                if (error != null) error.printStackTrace(os);
+            }
+
+            public boolean isEnabledAt(Server.LogLevel level) {
+                return level.level >= Server.LogLevel.WARN.level;
+            }
+        };
+        Server ws = new Server(executor, executor, Server.Options.withPort(port).andLogger(logger));
         ws.addHandlerFactory("/", () -> {
             WebSocketHandler h = createHandler();
             createdHandlers.add(h);
