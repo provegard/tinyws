@@ -4,7 +4,8 @@ language: java
 sudo: required
 
 install:
-- pip install --user autobahntestsuite
+- pip install Twisted==16.4.1
+- pip install autobahntestsuite
 
 # Should be default:
 # ./gradlew check
