@@ -65,7 +65,8 @@ public class AutobahnTest extends ClientTestBase {
 
     @DataProvider()
     public Iterator<Object[]> autobahnTestCases() throws IOException, InterruptedException {
-        Process wstest = Runtime.getRuntime().exec("wstest -s \"" + wstestJsonFile.getAbsolutePath() + "\" -m fuzzingclient");
+        // Quoted path doesn't work on Travis-CI, so only quote if the path contains whitespace.
+        Process wstest = Runtime.getRuntime().exec("wstest -s " + quoteIfContainsWhitespace(wstestJsonFile.getAbsolutePath()) + " -m fuzzingclient");
 
         new StreamReadingThread(wstest.getInputStream(), System.out::println).start();
         new StreamReadingThread(wstest.getErrorStream(), System.err::println).start();
@@ -87,6 +88,11 @@ public class AutobahnTest extends ClientTestBase {
         } catch (Exception ex) {
             return singletonList(new Object[] { null, ex.getMessage(), null }).iterator();
         }
+    }
+
+    private String quoteIfContainsWhitespace(String path) {
+        if (path.indexOf(' ') >= 0) return "\"" + path + "\"";
+        return path;
     }
 
     @Test(dataProvider = "autobahnTestCases")
