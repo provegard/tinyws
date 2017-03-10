@@ -1,4 +1,6 @@
 language: java
+jdk:
+  - oraclejdk8
 
 # Note: Latest Twisted caused the installation to fail on Travis.
 install:
