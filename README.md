@@ -1,5 +1,7 @@
 # TinyWS
 
+[![Build Status](https://travis-ci.org/provegard/tinyws.svg?branch=master)](https://travis-ci.org/provegard/tinyws)
+
 ## What is it?
 
 A tiny WebSocket server written in Java 8.
