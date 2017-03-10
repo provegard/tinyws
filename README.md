@@ -13,7 +13,7 @@ several megabytes of dependencies.
 
 ## Status
 
-Version 0.0.1.
+Version 0.0.2.
 
 It passes all tests of [Autobahn|Testsuite](https://github.com/crossbario/autobahn-testsuite) version
 0.7.5, except 12.\* and 13.\* (compression using the permessage-deflate extension).
@@ -52,6 +52,10 @@ The _echoserver_ folder contains an&mdash;drum roll&mdash;echo server!
 ## Usage/documentation
 
 TBD
+
+## Changelog
+
+See CHANGELOG.md.
 
 ## Author
 
