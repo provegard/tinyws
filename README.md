@@ -1,6 +1,7 @@
 # TinyWS
 
 [![Build Status](https://travis-ci.org/provegard/tinyws.svg?branch=master)](https://travis-ci.org/provegard/tinyws)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.programmaticallyspeaking/tinyws/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.programmaticallyspeaking/tinyws)
 
 ## What is it?
 
