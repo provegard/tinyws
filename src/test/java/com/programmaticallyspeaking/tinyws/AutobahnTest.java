@@ -103,9 +103,8 @@ public class AutobahnTest extends ClientTestBase {
             throw new SkipException(status);
         } else {
             List<String> matches = okStatuses.stream().filter(statusLower::matches).collect(toList());
-            assertThat(matches).isNotEmpty();
-            boolean isNumericCode = close.matches("^[0-9]+$");
-            assertTrue(isNumericCode, "Close code: " + close);
+            assertThat(matches).isNotEmpty().describedAs("Status should be ok-ish: " + status);
+            assertThat(close).matches("^[0-9]+$").describedAs("Close code should be numeric: " + close);
         }
     }
 
