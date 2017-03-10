@@ -32,13 +32,14 @@ public abstract class ClientTestBase {
         Executor executor = Executors.newCachedThreadPool();
         Server.Logger logger = new Server.Logger() {
             public void log(Server.LogLevel level, String message, Throwable error) {
-                PrintStream os = level == Server.LogLevel.ERROR ? System.err : System.out;
-                os.println("TINYWS - " + level + ": " + message);
-                if (error != null) error.printStackTrace(os);
+//                PrintStream os = level == Server.LogLevel.ERROR ? System.err : System.out;
+//                os.println("TINYWS - " + level + ": " + message);
+//                if (error != null) error.printStackTrace(os);
             }
 
             public boolean isEnabledAt(Server.LogLevel level) {
-                return level.level >= Server.LogLevel.WARN.level;
+//                return level.level >= Server.LogLevel.WARN.level;
+                return false;
             }
         };
         Server ws = new Server(executor, executor, Server.Options.withPort(port).andLogger(logger));
