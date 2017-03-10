@@ -50,7 +50,7 @@ test {
     testLogging {
         // set options for log level LIFECYCLE
 //        events "passed", "skipped", "failed", "standardOut"
-        events "passed", "skipped", "failed", "standardError"
+        events "failed", "standardError"
         showExceptions true
         exceptionFormat "full"
         showCauses true
