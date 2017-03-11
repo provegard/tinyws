@@ -11,9 +11,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -278,7 +276,7 @@ public class Server {
         private void handleResultFrame(Frame result) throws IOException {
             switch (result.opCode) {
                 case 1:
-                    String data = payloadCoder.decode(result.payloadData);
+                    CharSequence data = payloadCoder.decode(result.payloadData);
                     invokeHandler(h -> h.onTextMessage(data));
                     break;
                 case 2:
@@ -467,8 +465,8 @@ public class Server {
             if (payloadData.length == 0) return new CloseData(null, null);
             if (payloadData.length == 1) throw WebSocketClosure.protocolError("Invalid close frame payload length (1).");
             int code = (int) toLong(payloadData, 0, 2);
-            String reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
-            return new CloseData(code, reason);
+            CharSequence reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
+            return new CloseData(code, reason.toString());
         }
 
         static Frame merge(List<Frame> frameBatch) {                // Combine payloads!
@@ -561,8 +559,9 @@ public class Server {
     static class PayloadCoder {
         private final Charset charset = StandardCharsets.UTF_8;
         private final CharsetDecoder decoder = charset.newDecoder();
+        private final CharsetEncoder encoder = charset.newEncoder();
 
-        String decode(byte[] bytes) throws WebSocketClosure {
+        CharSequence decode(byte[] bytes) throws WebSocketClosure {
             return decode(bytes, 0, bytes.length);
         }
 
@@ -575,18 +574,22 @@ public class Server {
          * @return the decoded string
          * @throws WebSocketClosure (1007) thrown if the data are not valid UTF-8
          */
-        synchronized String decode(byte[] bytes, int offset, int len) throws WebSocketClosure {
+        synchronized CharSequence decode(byte[] bytes, int offset, int len) throws WebSocketClosure {
             decoder.reset();
             try {
-                CharBuffer buf = decoder.decode(ByteBuffer.wrap(bytes, offset, len));
-                return buf.toString();
+                return decoder.decode(ByteBuffer.wrap(bytes, offset, len));
             } catch (Exception ex) {
                 throw WebSocketClosure.invalidFramePayloadData();
             }
         }
 
-        byte[] encode(String s) {
-            return s.getBytes(charset);
+        synchronized byte[] encode(CharSequence s) throws CharacterCodingException {
+            encoder.reset();
+            ByteBuffer buf = encoder.encode(CharBuffer.wrap(s));
+
+            byte[] result = new byte[buf.remaining()];
+            buf.get(result);
+            return result;
         }
     }
 
@@ -634,7 +637,7 @@ public class Server {
             writeFrame(8, combined);
         }
 
-        void writeText(String text) throws IOException {
+        void writeText(CharSequence text) throws IOException {
             byte[] s = payloadCoder.encode(text);
             writePossiblyFragmentedFrames(1, s);
         }
@@ -729,7 +732,7 @@ public class Server {
             });
         }
 
-        public void sendTextMessage(String text) throws IOException {
+        public void sendTextMessage(CharSequence text) throws IOException {
             writer.writeText(text);
         }
 
@@ -920,7 +923,7 @@ public class Server {
          * @param text the text to send
          * @throws IOException on I/O failure while sending
          */
-        void sendTextMessage(String text) throws IOException;
+        void sendTextMessage(CharSequence text) throws IOException;
 
         /**
          * Sends binary data to the client.
@@ -1007,7 +1010,7 @@ public class Server {
          *
          * @param text the message
          */
-        void onTextMessage(String text);
+        void onTextMessage(CharSequence text);
 
         /**
          * Invoked when the client sends binary data.

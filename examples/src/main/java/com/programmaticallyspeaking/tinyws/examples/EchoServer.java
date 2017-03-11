@@ -64,7 +64,7 @@ public class EchoServer {
         }
 
         @Override
-        public void onTextMessage(String text) {
+        public void onTextMessage(CharSequence text) {
             try {
                 client.sendTextMessage(text);
             } catch (IOException e) {

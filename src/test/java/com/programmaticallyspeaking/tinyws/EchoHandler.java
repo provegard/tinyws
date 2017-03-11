@@ -19,7 +19,7 @@ class EchoHandler implements Server.WebSocketHandler {
         maybePrint(t);
     }
 
-    public void onTextMessage(String text) {
+    public void onTextMessage(CharSequence text) {
         try {
             client.sendTextMessage(text);
         } catch (IOException e) {
