@@ -19,6 +19,7 @@ public class EchoServer {
         Server.Logger logger = new Server.Logger() {
             @Override
             public void log(Server.LogLevel level, String message, Throwable error) {
+                if (!isEnabledAt(level)) return;
                 String msg = level + ": " + message;
                 (error != null ? System.err : System.out).println(msg);
                 if (error != null) error.printStackTrace(System.err);
@@ -26,7 +27,7 @@ public class EchoServer {
 
             @Override
             public boolean isEnabledAt(Server.LogLevel level) {
-                return true;
+                return level.level >= Server.LogLevel.DEBUG.level;
             }
         };
         Server ws = new Server(executor,
