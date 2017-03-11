@@ -29,8 +29,8 @@ public class EchoServer {
                 return true;
             }
         };
-        Server ws = new Server(executor, executor,
-                Server.Options.withPort(9001).andLogger(logger));
+        Server ws = new Server(executor,
+                Server.Options.withPort(9001).andLogger(logger).andBacklog(1024));
         ws.addHandlerFactory("/", EchoHandler::new);
         try {
             System.out.println("Starting");

@@ -43,7 +43,6 @@ public class Server {
     private static final int SupportedVersion = 13;
 
     private final Executor mainExecutor;
-    private final Executor handlerExecutor;
     private final Options options;
     private final Logger logger;
 
@@ -53,15 +52,13 @@ public class Server {
     /**
      * Constructs a new server instance but doesn't start listening for client connections.
      *
-     * @param mainExecutor the {@link Executor} instance that will be used to create the main listener task as well as
+     * @param mainExecutor the {@link Executor} instance that will be used to run the main listener task as well as
      *                     tasks for handling connected clients. Please note that each task will use excessive blocking
      *                     I/O, so use an appropriate executor.
-     * @param handlerExecutor the {@code Executor} instance that will be used to invoke handlers.
      * @param options server options
      */
-    public Server(Executor mainExecutor, Executor handlerExecutor, Options options) {
+    public Server(Executor mainExecutor, Options options) {
         this.mainExecutor = mainExecutor;
-        this.handlerExecutor = handlerExecutor;
         this.options = options;
         this.logger = new Logger() {
             public void log(LogLevel level, String message, Throwable error) {
@@ -171,7 +168,12 @@ public class Server {
         }
 
         private void invokeHandler(Consumer<WebSocketHandler> fun) {
-            if (handler != null) handlerExecutor.execute(() -> fun.accept(handler));
+            if (handler == null) return;
+            try {
+                fun.accept(handler);
+            } catch (Exception ex) {
+                logger.log(LogLevel.ERROR, "Handler invocation error.", ex);
+            }
         }
 
         @Override

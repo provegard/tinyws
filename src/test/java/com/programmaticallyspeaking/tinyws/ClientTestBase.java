@@ -42,7 +42,7 @@ public abstract class ClientTestBase {
                 return false;
             }
         };
-        Server ws = new Server(executor, executor, Server.Options.withPort(port).andLogger(logger));
+        Server ws = new Server(executor, Server.Options.withPort(port).andLogger(logger));
         ws.addHandlerFactory("/", () -> {
             WebSocketHandler h = createHandler();
             createdHandlers.add(h);
