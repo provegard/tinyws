@@ -5,9 +5,6 @@ import org.java_websocket.drafts.Draft;
 import org.java_websocket.drafts.Draft_17;
 import org.java_websocket.framing.Framedata;
 import org.java_websocket.handshake.ServerHandshake;
-import org.mockito.Mockito;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
