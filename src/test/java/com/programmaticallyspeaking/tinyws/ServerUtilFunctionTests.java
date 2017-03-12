@@ -24,7 +24,7 @@ public class ServerUtilFunctionTests {
 
     @Test(dataProvider = "numberToBytes_data")
     public void numberToBytes_should_yield_correct_data(int number, int len, byte[] expected) throws IOException {
-        byte[] actual = Server.numberToBytes(number, len);
+        byte[] actual = Server.numberToBytes(number, len, null);
         assertArrayEquals(expected, actual);
     }
 

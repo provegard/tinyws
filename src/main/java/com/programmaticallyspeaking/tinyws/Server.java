@@ -620,6 +620,9 @@ public class Server {
         private final PayloadCoder payloadCoder;
         private final int maxFrameSize;
 
+        // Reusable array for writing length bytes
+        private final byte[] lengthBytes = new byte[8];
+
         FrameWriter(OutputStream out, PayloadCoder payloadCoder, int maxFrameSize) {
             this.out = out;
             this.payloadCoder = payloadCoder;
@@ -629,9 +632,8 @@ public class Server {
         void writeClose(int code, String reason) throws IOException {
             ByteBuffer buf = payloadCoder.encode(reason);
             int bufLen = buf.limit();
-            byte[] numBytes = numberToBytes(code, 2);
-            byte[] combined = new byte[numBytes.length + bufLen];
-            System.arraycopy(numBytes, 0, combined, 0, 2);
+            byte[] combined = new byte[2 + bufLen];
+            numberToBytes(code, 2, combined);
             buf.get(combined, 2, bufLen);
             writeFrame(8, combined);
         }
@@ -706,7 +708,7 @@ public class Server {
             out.write(firstByte);
             out.write(secondByte);
             if (extraLengthBytes > 0) {
-                out.write(numberToBytes(len, extraLengthBytes));
+                out.write(numberToBytes(len, extraLengthBytes, lengthBytes), 0, extraLengthBytes);
             }
             if (data != null) out.write(data, offset, len);
             out.flush();
@@ -752,8 +754,9 @@ public class Server {
         public String fragment() { return headers.fragment; }
     }
 
-    static byte[] numberToBytes(int number, int len) {
-        byte[] array = new byte[len];
+    static byte[] numberToBytes(int number, int len, byte[] target) {
+        assert target == null || target.length >= len : "numberToBytes target is too small";
+        byte[] array = target != null ? target : new byte[len];
         // Start from the end (network byte order), assume array is filled with zeros.
         for (int i = len - 1; i >= 0; i--) {
             array[i] = (byte) (number & 0xff);
