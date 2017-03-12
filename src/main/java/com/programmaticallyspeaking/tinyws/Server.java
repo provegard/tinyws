@@ -574,7 +574,7 @@ public class Server {
          * @return the decoded string
          * @throws WebSocketClosure (1007) thrown if the data are not valid UTF-8
          */
-        synchronized CharSequence decode(byte[] bytes, int offset, int len) throws WebSocketClosure {
+        CharSequence decode(byte[] bytes, int offset, int len) throws WebSocketClosure {
             decoder.reset();
             try {
                 return decoder.decode(ByteBuffer.wrap(bytes, offset, len));
@@ -583,13 +583,11 @@ public class Server {
             }
         }
 
-        synchronized byte[] encode(CharSequence s) throws CharacterCodingException {
+        ByteBuffer encode(CharSequence s) throws CharacterCodingException {
             encoder.reset();
             ByteBuffer buf = encoder.encode(CharBuffer.wrap(s));
-
-            byte[] result = new byte[buf.remaining()];
-            buf.get(result);
-            return result;
+            assert buf.hasArray() : "Expected ByteBuffer to have an array";
+            return buf;
         }
     }
 
@@ -629,21 +627,22 @@ public class Server {
         }
 
         void writeClose(int code, String reason) throws IOException {
-            byte[] s = payloadCoder.encode(reason);
+            ByteBuffer buf = payloadCoder.encode(reason);
+            int bufLen = buf.limit();
             byte[] numBytes = numberToBytes(code, 2);
-            byte[] combined = new byte[numBytes.length + s.length];
+            byte[] combined = new byte[numBytes.length + bufLen];
             System.arraycopy(numBytes, 0, combined, 0, 2);
-            System.arraycopy(s, 0, combined, 2, s.length);
+            buf.get(combined, 2, bufLen);
             writeFrame(8, combined);
         }
 
         void writeText(CharSequence text) throws IOException {
-            byte[] s = payloadCoder.encode(text);
-            writePossiblyFragmentedFrames(1, s);
+            ByteBuffer buf = payloadCoder.encode(text);
+            writePossiblyFragmentedFrames(1, buf);
         }
 
         void writeBinary(byte[] data) throws IOException {
-            writePossiblyFragmentedFrames(2, data);
+            writePossiblyFragmentedFrames(2, ByteBuffer.wrap(data));
         }
 
         void writePing(byte[] data) throws IOException {
@@ -654,23 +653,26 @@ public class Server {
             writeFrame(10, data);
         }
 
-        private void writePossiblyFragmentedFrames(int opCode, byte[] data) throws IOException {
+        private void writePossiblyFragmentedFrames(int opCode, ByteBuffer buf) throws IOException {
             // https://tools.ietf.org/html/rfc6455#section-5.6 implies that a single frame may contain an UTF-8
             // sequence that by itself is invalid, as long as the entire message text is valid UTF-8.
-            if (maxFrameSize == 0 || data == null || data.length <= maxFrameSize) {
-                writeFrame(opCode, data);
+            int bufLen = buf.limit();
+            byte[] data = buf.array();
+            if (maxFrameSize == 0 || bufLen <= maxFrameSize) {
+                writeFrame(opCode, data, bufLen, 0, bufLen);
             } else {
                 int offset = 0;
-                while (offset < data.length) {
-                    int len = Math.min(data.length - offset, maxFrameSize);
-                    writeFrame(opCode, data, offset, len);
+                while (offset < bufLen) {
+                    int len = Math.min(bufLen - offset, maxFrameSize);
+                    writeFrame(opCode, data, bufLen, offset, len);
                     offset += len;
                 }
             }
         }
 
         private void writeFrame(int opCode, byte[] data) throws IOException {
-            writeFrame(opCode, data, 0, data != null ? data.length : 0);
+            int dataLen = data != null ? data.length : 0;
+            writeFrame(opCode, data, dataLen, 0, dataLen);
         }
 
         /**
@@ -678,11 +680,13 @@ public class Server {
          * this method is synchronized.
          *
          * @param opCode the opcode of the frame
-         * @param data frame data
+         * @param data array that contains frame data
+         * @param totalLen total data length (differs from {@code len} when data are split across multiple frames
+         * @param offset offset in the {@code data} array where the frame data starts
+         * @param len length of frame data
          * @throws IOException thrown if writing to the socket fails
          */
-        synchronized private void writeFrame(int opCode, byte[] data, int offset, int len) throws IOException {
-            int totalLen = data != null ? data.length : 0;
+        synchronized private void writeFrame(int opCode, byte[] data, int totalLen, int offset, int len) throws IOException {
             boolean isFirstFrame = offset == 0;
             boolean isFinalFrame = offset + len == totalLen;
 
@@ -733,10 +737,12 @@ public class Server {
         }
 
         public void sendTextMessage(CharSequence text) throws IOException {
+            if (text == null) throw new IllegalArgumentException("Cannot send null text");
             writer.writeText(text);
         }
 
         public void sendBinaryData(byte[] data) throws IOException {
+            if (data == null) throw new IllegalArgumentException("Cannot send null data");
             writer.writeBinary(data);
         }
 
