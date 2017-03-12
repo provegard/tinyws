@@ -384,19 +384,15 @@ public class Server {
             this.isFin = isFin;
         }
 
-        private static int readUnsignedByte(InputStream in) throws IOException {
-            int b = in.read();
-            if (b < 0) throw new IOException("End of stream");
-            return b;
-        }
         private static int toUnsigned(byte b) {
             int result = b;
             if (result < 0) result += 256;
             return result;
         }
 
-        private static byte[] readBytes(InputStream in, int len) throws IOException {
-            byte[] buf = new byte[len];
+        private static byte[] readBytes(InputStream in, int len, byte[] target) throws IOException {
+            assert target == null || target.length >= len : "readBytes target is too small";
+            byte[] buf = target != null ? target : new byte[len];
             int totalRead = 0;
             int offs = 0;
             while (totalRead < len) {
@@ -417,18 +413,19 @@ public class Server {
             return result;
         }
 
-        private static long toLong(byte[] data) {
-            return toLong(data, 0, data.length);
-        }
-
         static Frame read(InputStream in) throws IOException {
-            int firstByte = readUnsignedByte(in);
+            // We will read at most 8 bytes at any time, except the payload data.
+            byte[] buf = new byte[8];
+
+            // Read first 2 bytes
+            readBytes(in, 2, buf);
+            byte firstByte = buf[0];
+            byte secondByte = buf[1];
             boolean isFin = (firstByte & 128) == 128;
             boolean hasZeroReserved = (firstByte & 112) == 0;
             if (!hasZeroReserved) throw WebSocketClosure.protocolError("Non-zero reserved bits in 1st byte: " + (firstByte & 112));
             int opCode = (firstByte & 15);
             boolean isControlFrame = (opCode & 8) == 8;
-            int secondByte = readUnsignedByte(in);
             boolean isMasked = (secondByte & 128) == 128;
             int len = (secondByte & 127);
             if (isControlFrame) {
@@ -437,16 +434,16 @@ public class Server {
             }
             if (len == 126) {
                 // 2 bytes of extended len
-                long tmp = toLong(readBytes(in, 2));
+                long tmp = toLong(readBytes(in, 2, buf), 0, 2);
                 len = (int) tmp;
             } else if (len == 127) {
                 // 8 bytes of extended len
-                long tmp = toLong(readBytes(in, 8));
+                long tmp = toLong(readBytes(in, 8, buf), 0, 8);
                 if (tmp > Integer.MAX_VALUE) throw WebSocketClosure.protocolError("Frame length greater than 0x7fffffff not supported.");
                 len = (int) tmp;
             }
-            byte[] maskingKey = isMasked ? readBytes(in, 4) : null;
-            byte[] payloadData = unmaskIfNeededInPlace(readBytes(in, len), maskingKey);
+            byte[] maskingKey = isMasked ? readBytes(in, 4, buf) : null;
+            byte[] payloadData = unmaskIfNeededInPlace(readBytes(in, len, null), maskingKey);
             return new Frame(opCode, payloadData, isFin);
         }
 

@@ -41,7 +41,7 @@ public class WebSocketTest extends ClientTestBase {
 
     private void sendIncorrectFrame() throws Exception {
         SimpleClient cl = new SimpleClient(createURI());
-        cl.sendRawData(new byte [] { (byte)112 });
+        cl.sendRawData(new byte [] { (byte)112, 0 });
         cl.waitUntilClosed();
     }
 
