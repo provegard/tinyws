@@ -466,7 +466,7 @@ public class Server {
             if (payloadData.length == 1) throw WebSocketClosure.protocolError("Invalid close frame payload length (1).");
             int code = (int) toLong(payloadData, 0, 2);
             CharSequence reason = payloadData.length > 2 ? payloadCoder.decode(payloadData, 2, payloadData.length - 2) : null;
-            return new CloseData(code, reason.toString());
+            return new CloseData(code, reason != null ? reason.toString() : null);
         }
 
         static Frame merge(List<Frame> frameBatch) {                // Combine payloads!
