@@ -447,16 +447,6 @@ public class Server {
             return new Frame(opCode, payloadData, isFin);
         }
 
-        private static byte[] unmaskIfNeededInPlace(byte[] bytes, byte[] maskingKey) {
-            if (maskingKey != null) {
-                for (int i = 0; i < bytes.length; i++) {
-                    int j = i % 4;
-                    bytes[i] = (byte) (bytes[i] ^ maskingKey[j]);
-                }
-            }
-            return bytes;
-        }
-
         CloseData toCloseData(PayloadCoder payloadCoder) throws WebSocketClosure {
             if (opCode != 8) throw new IllegalStateException("Not a close frame: " + opCode);
             if (payloadData.length == 0) return new CloseData(null, null);
@@ -778,6 +768,27 @@ public class Server {
     }
     private interface RunnableThatThrows {
         void run() throws Exception;
+    }
+
+    static byte[] unmaskIfNeededInPlace(byte[] bytes, byte[] maskingKey) {
+        if (maskingKey != null) {
+            // Performance note: This code is up to 4 times faster than using only the last loop by itself.
+            // Using an IntBuffer is not faster.
+            byte m0 = maskingKey[0], m1 = maskingKey[1], m2 = maskingKey[2], m3 = maskingKey[3];
+            int roundedLen = 4 * (bytes.length / 4);
+            int i = 0;
+            for (; i < roundedLen; i += 4) {
+                bytes[i] = (byte) (bytes[i] ^ m0);
+                bytes[i+1] = (byte) (bytes[i+1] ^ m1);
+                bytes[i+2] = (byte) (bytes[i+2] ^ m2);
+                bytes[i+3] = (byte) (bytes[i+3] ^ m3);
+            }
+            for (; i < bytes.length; i++) {
+                int j = i % 4;
+                bytes[i] = (byte) (bytes[i] ^ maskingKey[j]);
+            }
+        }
+        return bytes;
     }
 
     static class MethodNotAllowedException extends IllegalArgumentException {
