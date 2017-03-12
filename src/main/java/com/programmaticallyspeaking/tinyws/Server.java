@@ -600,6 +600,12 @@ public class Server {
         static WebSocketClosure invalidFramePayloadData() {
             return new WebSocketClosure(1007, "Invalid frame payload data", null, false);
         }
+
+        @Override
+        public synchronized Throwable fillInStackTrace() {
+            // Stack trace is not relevant
+            return this;
+        }
     }
 
     static class FrameWriter {
