@@ -4,6 +4,7 @@
 
 * Don't use a separate Executor for invoking handlers&mdash;async handler invocation created concurrency problems.
 * Performance & memory improvements
+* WebSocketHandler.onTextMessage received a `CharSequence` instead of a `String`.
 
 ## 0.0.2 (2017-03-11)
 
