@@ -30,10 +30,10 @@ Features:
 * Configurable address and port
 * Configurable backlog
 * Logging via simple interface&mdash;no dependency on any particilar log framework
+* SSL (WSS) support
 
 Limitations:
 
-* No HTTPS
 * No frame compression support
 * No extension support
 * Maximum payload size is 0x7fffffff (2147483647) bytes

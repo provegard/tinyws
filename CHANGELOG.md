@@ -1,5 +1,9 @@
 # Changes
 
+## 0.0.4 (2017-03-24)
+
+* SSL support
+
 ## 0.0.3 (2017-03-12)
 
 * Don't use a separate Executor for invoking handlers&mdash;async handler invocation created concurrency problems.
