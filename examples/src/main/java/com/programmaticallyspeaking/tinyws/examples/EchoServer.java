@@ -9,29 +9,32 @@ package com.programmaticallyspeaking.tinyws.examples;
 
 import com.programmaticallyspeaking.tinyws.Server;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class EchoServer {
-    public static void main(String[] args) {
-        Executor executor = Executors.newCachedThreadPool();
-        Server.Logger logger = new Server.Logger() {
-            @Override
-            public void log(Server.LogLevel level, String message, Throwable error) {
-                if (!isEnabledAt(level)) return;
-                String msg = level + ": " + message;
-                (error != null ? System.err : System.out).println(msg);
-                if (error != null) error.printStackTrace(System.err);
-            }
+    public static void main(String[] args) throws IOException, GeneralSecurityException {
+        Server.Logger logger = new ConsoleLogger();
+        Server.Options options = Server.Options.withPort(9001).andLogger(logger).andBacklog(1024);
 
-            @Override
-            public boolean isEnabledAt(Server.LogLevel level) {
-                return level.level >= Server.LogLevel.DEBUG.level;
-            }
-        };
-        Server ws = new Server(executor,
-                Server.Options.withPort(9001).andLogger(logger).andBacklog(1024));
+        if (args.length == 3) {
+            System.out.println("Current directory is " + System.getProperty("user.dir"));
+            System.out.println("Will use SSL (args: keystore path (JKS), keystore pass, key pass)");
+            SSLContext sslContext = createSSLContext(args[0], args[1], args[2]);
+            options = options.andSSL(sslContext);
+        }
+
+        Executor executor = Executors.newCachedThreadPool();
+        Server ws = new Server(executor, options);
         ws.addHandlerFactory("/", EchoHandler::new);
         try {
             System.out.println("Starting");
@@ -41,44 +44,22 @@ public class EchoServer {
         }
     }
 
-    static class EchoHandler implements Server.WebSocketHandler {
-
-        private Server.WebSocketClient client;
-
-        @Override
-        public void onOpened(Server.WebSocketClient client) {
-            this.client = client;
+    private static SSLContext createSSLContext(String keystorePath, String storePassword, String keyPassword) throws IOException, GeneralSecurityException {
+        KeyStore ks = KeyStore.getInstance("JKS");
+        File file = new File(keystorePath);
+        try(InputStream is = new FileInputStream(file)) {
+            ks.load(is, storePassword.toCharArray());
         }
 
-        @Override
-        public void onClosedByClient(int code, String reason) {
-        }
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(ks, keyPassword.toCharArray());
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(ks);
 
-        @Override
-        public void onClosedByServer(int code, String reason) {
-        }
+        SSLContext sslContext = null;
+        sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-        @Override
-        public void onFailure(Throwable t) {
-            t.printStackTrace(System.err);
-        }
-
-        @Override
-        public void onTextMessage(CharSequence text) {
-            try {
-                client.sendTextMessage(text);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
-        @Override
-        public void onBinaryData(byte[] data) {
-            try {
-                client.sendBinaryData(data);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+        return sslContext;
     }
 }
