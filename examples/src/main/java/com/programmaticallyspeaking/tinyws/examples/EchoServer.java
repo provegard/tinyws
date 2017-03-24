@@ -36,7 +36,7 @@ public class EchoServer {
         try {
             System.out.println("Starting");
             ws.start();
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }

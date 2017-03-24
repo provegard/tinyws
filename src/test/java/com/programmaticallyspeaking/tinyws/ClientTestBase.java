@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.BindException;
+import java.security.GeneralSecurityException;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
@@ -28,7 +29,11 @@ public abstract class ClientTestBase {
         return mock(WebSocketHandler.class);
     }
 
-    private Server startServer(int port) throws IOException {
+    protected Server.Options configureAdditionalOptions(Server.Options options) throws Exception {
+        return options;
+    }
+
+    private Server startServer(int port) throws Exception {
         Executor executor = Executors.newCachedThreadPool();
         Server.Logger logger = new Server.Logger() {
             public void log(Server.LogLevel level, String message, Throwable error) {
@@ -42,7 +47,7 @@ public abstract class ClientTestBase {
                 return false;
             }
         };
-        Server ws = new Server(executor, Server.Options.withPort(port).andLogger(logger));
+        Server ws = new Server(executor, configureAdditionalOptions(Server.Options.withPort(port).andLogger(logger)));
         ws.addHandlerFactory("/", () -> {
             WebSocketHandler h = createHandler();
             createdHandlers.add(h);
@@ -52,7 +57,7 @@ public abstract class ClientTestBase {
         return ws;
     }
 
-    private void attemptToStartServer() throws IOException {
+    private void attemptToStartServer() throws Exception {
         int attempts = 20;
         while (attempts-- > 0) {
             int port = (int) (50000 + 2000 * Math.random());
@@ -68,7 +73,7 @@ public abstract class ClientTestBase {
     }
 
     @BeforeClass
-    public void startServer() throws IOException {
+    public void startServer() throws Exception {
         attemptToStartServer();
     }
 

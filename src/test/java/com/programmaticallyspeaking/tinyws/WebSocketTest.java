@@ -1,15 +1,11 @@
 package com.programmaticallyspeaking.tinyws;
 
 import com.programmaticallyspeaking.tinyws.Server.WebSocketHandler;
-import org.java_websocket.drafts.Draft;
-import org.java_websocket.drafts.Draft_17;
-import org.java_websocket.framing.Framedata;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.ByteBuffer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;

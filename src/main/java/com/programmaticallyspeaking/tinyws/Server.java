@@ -7,11 +7,13 @@
 
 package com.programmaticallyspeaking.tinyws;
 
+import javax.net.ssl.*;
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.*;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -103,12 +105,23 @@ public class Server {
      * used to start the listening task.
      *
      * @exception IOException if creating the server socket fails
+     * @exception GeneralSecurityException if an SSL related error occurs
      */
-    public void start() throws IOException {
+    public void start() throws IOException, GeneralSecurityException {
+        serverSocket = createServerSocket();
+        mainExecutor.execute(this::acceptInLoop);
+    }
+
+    private ServerSocket createServerSocket() throws IOException, GeneralSecurityException {
         // Using backlog 0 will force ServerSocket to use the default (50).
         int backlog = options.backlog != null ? options.backlog : 0;
-        serverSocket = new ServerSocket(options.port, backlog, options.address);
-        mainExecutor.execute(this::acceptInLoop);
+
+        if (options.shouldUseSSL()) {
+            SSLServerSocketFactory sslServerSocketFactory = options.sslContext.getServerSocketFactory();
+            return sslServerSocketFactory.createServerSocket(options.port, backlog, options.address);
+        }
+
+        return new ServerSocket(options.port, backlog, options.address);
     }
 
     /**
@@ -217,6 +230,8 @@ public class Server {
         }
 
         private void communicate() throws IOException, NoSuchAlgorithmException {
+            maybeLogSSLDetails();
+
             Headers headers = Headers.read(in);
             if (!headers.isProperUpgrade()) throw new IllegalArgumentException("Handshake has malformed upgrade.");
             if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
@@ -244,6 +259,15 @@ public class Server {
             while (true) {
                 frameBatch.add(Frame.read(in));
                 handleBatch(frameBatch);
+            }
+        }
+
+        private void maybeLogSSLDetails() {
+            if (clientSocket instanceof SSLSocket) {
+                SSLSocket sslSocket = (SSLSocket) clientSocket;
+                SSLSession sslSession = sslSocket.getSession();
+                lazyLog(LogLevel.DEBUG, () -> String.format("SSL session uses protocol %s and cipher suite %s.",
+                        sslSession.getProtocol(), sslSession.getCipherSuite()));
             }
         }
 
@@ -814,6 +838,9 @@ public class Server {
         Logger logger;
         InetAddress address;
         int maxFrameSize;
+        SSLContext sslContext;
+
+        private boolean shouldUseSSL() { return sslContext != null; }
 
         private Options(int port) {
             this.port = port;
@@ -874,6 +901,18 @@ public class Server {
         public Options andMaxFrameSize(int size) {
             if (size <= 125) throw new IllegalArgumentException("Max frame size must be at least 126.");
             this.maxFrameSize = size;
+            return this;
+        }
+
+        /**
+         * Configures the server for SSL.
+         *
+         * @param sslContext the SSL context that creates an SSL socket
+         * @return this options instance
+         */
+        public Options andSSL(SSLContext sslContext) {
+            if (sslContext == null) throw new IllegalArgumentException("SSL context cannot be null.");
+            this.sslContext = sslContext;
             return this;
         }
     }

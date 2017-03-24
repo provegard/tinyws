@@ -1,17 +1,20 @@
 package com.programmaticallyspeaking.tinyws;
 
+import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft;
 import org.java_websocket.drafts.Draft_17;
 import org.java_websocket.framing.Framedata;
 import org.java_websocket.handshake.ServerHandshake;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
-class SimpleClient extends org.java_websocket.client.WebSocketClient {
+class SimpleClient extends WebSocketClient {
     private CountDownLatch closeLatch = new CountDownLatch(1);
 
     List<String> messages = new ArrayList<>();
@@ -26,8 +29,12 @@ class SimpleClient extends org.java_websocket.client.WebSocketClient {
     }
 
     public SimpleClient(URI serverURI) throws InterruptedException {
+        this(serverURI, true);
+    }
+
+    public SimpleClient(URI serverURI, boolean connect) throws InterruptedException {
         super(serverURI, new DraftThatAllowsUsToSendBogusData());
-        if (!this.connectBlocking()) throw new IllegalStateException("Not connected");
+        if (connect && !this.connectBlocking()) throw new IllegalStateException("Not connected");
     }
 
     public void onOpen(ServerHandshake handshakedata) {
@@ -50,6 +57,15 @@ class SimpleClient extends org.java_websocket.client.WebSocketClient {
         sendRawData(new byte [] { (byte)136, 2, (byte) ((code & 0xff00) >>> 8), (byte) (code & 0xff) });
     }
 
+    private void connectSSL() throws Exception {
+        SSLContext sslContext = SSLTesting.createSSLContextForTests(false);
+        SSLSocketFactory factory = sslContext.getSocketFactory();
+
+        setSocket(factory.createSocket());
+
+        if (!connectBlocking()) throw new IllegalStateException("Not connected");
+    }
+
     static void sendIncorrectFrame(URI uri) throws Exception {
         SimpleClient cl = new SimpleClient(uri);
         cl.sendRawData(new byte [] { (byte)112, 0 });
@@ -58,6 +74,15 @@ class SimpleClient extends org.java_websocket.client.WebSocketClient {
 
     static SimpleClient sendText(URI uri, String text) throws Exception {
         SimpleClient cl = new SimpleClient(uri);
+        cl.send(text);
+        cl.sendClose(1001);
+        cl.waitUntilClosed();
+        return cl;
+    }
+
+    static SimpleClient sendSSLText(URI uri, String text) throws Exception {
+        SimpleClient cl = new SimpleClient(uri, false); // don't connect yet
+        cl.connectSSL();
         cl.send(text);
         cl.sendClose(1001);
         cl.waitUntilClosed();
