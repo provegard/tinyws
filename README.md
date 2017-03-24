@@ -50,6 +50,37 @@ installed and available on the path.
 
 The _echoserver_ folder contains an&mdash;drum roll&mdash;echo server!
 
+## Autobahn test suite
+
+Create an Autobahn configuration file named _fuzzingclient.json_, e.g.:
+
+    {
+      "servers": [{ "url": "ws://127.0.0.1:9001" }],
+      "cases": ["*"],
+    }
+
+Run the echo server (which starts on port 9001):
+
+    ./gradlew run
+    
+Run _wstest_:
+
+    wstest -m fuzzingclient
+
+For SSL, change _fuzzingclient.json_ so that it uses a **wss** URL instead:
+
+    {
+      "servers": [{ "url": "wss://127.0.0.1:9001" }],
+      "cases": ["*"],
+    }
+
+...and then run the echo server like this:
+
+    ./gradles -Pargs="wss/keystore.jks storepassword keypassword"
+
+(Yes, those are the actual passwords&mdash;they're not placeholders.)
+ 
+
 ## Usage/documentation
 
 TBD
