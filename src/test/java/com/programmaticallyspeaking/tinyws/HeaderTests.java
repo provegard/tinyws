@@ -19,7 +19,7 @@ public class HeaderTests {
         return new Object[][] {
             { "Missing GET", "Upgrade: websocket\r\n\r\n", IllegalArgumentException.class },
             { "Malformed GET", "GET /foo\r\nUpgrade: websocket\r\n\r\n", IllegalArgumentException.class },
-            { "Non-GET", "POST /foo HTTP/1.1\r\nUpgrade: websocket\r\n\r\n", Server.MethodNotAllowedException.class },
+            { "No data", "", IllegalArgumentException.class },
             { "GET too late", "Upgrade: websocket\r\nGET /foo HTTP/1.1\r\n\r\n", IllegalArgumentException.class },
         };
     }
@@ -30,12 +30,12 @@ public class HeaderTests {
 
     @Test(dataProvider = "failure_data")
     public void Invalid_request_should_fail(String desc, String headers, Class<? extends Throwable> expectedExceptionClass) throws IOException {
-        Assert.assertThrows(expectedExceptionClass, () -> Headers.read(streamFromString(headers)));
+        Assert.assertThrows(expectedExceptionClass, () -> Headers.read(streamFromString(headers), false));
     }
 
     @Test
     public void WebSocket_key_should_be_extracted() throws IOException {
-        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\nSec-WebSocket-Key: foo\r\n\r\n"));
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\nSec-WebSocket-Key: foo\r\n\r\n"), false);
         assertEquals(headers.key(), "foo");
     }
 
@@ -51,7 +51,7 @@ public class HeaderTests {
 
     @Test(dataProvider = "version_data")
     public void WebSocket_version_should_be_extracted(String desc, String header, int expected) throws IOException {
-        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"), false);
         assertEquals(headers.version(), expected);
     }
 
@@ -66,7 +66,7 @@ public class HeaderTests {
 
     @Test(dataProvider = "userAgent_data")
     public void User_agent_should_be_extracted(String desc, String header, String expected) throws IOException {
-        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"), false);
         assertEquals(headers.userAgent(), expected);
     }
 
@@ -80,7 +80,7 @@ public class HeaderTests {
 
     @Test(dataProvider = "host_data")
     public void Host_should_be_extracted(String desc, String header, String expected) throws IOException {
-        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"));
+        Headers headers = Headers.read(streamFromString("GET / HTTP/1.1\r\n" + header + "\r\n"), false);
         assertEquals(headers.host(), expected);
     }
 
@@ -97,19 +97,19 @@ public class HeaderTests {
 
     @Test(dataProvider = "endpoint_data")
     public void Endpoint_should_be_extracted(String desc, String headers, String expected, String ignored, String ignored2) throws IOException {
-        Headers h = Headers.read(streamFromString(headers));
+        Headers h = Headers.read(streamFromString(headers), false);
         assertEquals(h.endpoint, expected);
     }
 
     @Test(dataProvider = "endpoint_data")
     public void Querystring_should_be_extracted(String desc, String headers, String ignored, String expected, String ignored2) throws IOException {
-        Headers h = Headers.read(streamFromString(headers));
+        Headers h = Headers.read(streamFromString(headers), false);
         assertEquals(h.query, expected);
     }
 
     @Test(dataProvider = "endpoint_data")
     public void Fragment_should_be_extracted(String desc, String headers, String ignored, String ignored2, String expected) throws IOException {
-        Headers h = Headers.read(streamFromString(headers));
+        Headers h = Headers.read(streamFromString(headers), false);
         assertEquals(h.fragment, expected);
     }
 }

@@ -4,13 +4,9 @@ import com.programmaticallyspeaking.tinyws.Server.WebSocketHandler;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.BeforeSuite;
 
-import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.BindException;
-import java.security.GeneralSecurityException;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
@@ -24,6 +20,7 @@ public abstract class ClientTestBase {
     protected Queue<WebSocketHandler> createdHandlers = new ConcurrentLinkedQueue<>();
     protected String host = "localhost";
     protected int port;
+    protected boolean logAll = false;
 
     protected WebSocketHandler createHandler() {
         return mock(WebSocketHandler.class);
@@ -37,14 +34,14 @@ public abstract class ClientTestBase {
         Executor executor = Executors.newCachedThreadPool();
         Server.Logger logger = new Server.Logger() {
             public void log(Server.LogLevel level, String message, Throwable error) {
-//                PrintStream os = level == Server.LogLevel.ERROR ? System.err : System.out;
-//                os.println("TINYWS - " + level + ": " + message);
-//                if (error != null) error.printStackTrace(os);
+                if (!logAll) return;
+                PrintStream os = level == Server.LogLevel.ERROR ? System.err : System.out;
+                os.println("TINYWS - " + level + ": " + message);
+                if (error != null) error.printStackTrace(os);
             }
 
             public boolean isEnabledAt(Server.LogLevel level) {
-//                return level.level >= Server.LogLevel.WARN.level;
-                return false;
+                return logAll;
             }
         };
         Server ws = new Server(executor, configureAdditionalOptions(Server.Options.withPort(port).andLogger(logger)));
@@ -53,9 +50,12 @@ public abstract class ClientTestBase {
             createdHandlers.add(h);
             return h;
         });
+        onBeforeStart(ws);
         ws.start();
         return ws;
     }
+
+    protected void onBeforeStart(Server server) {}
 
     private void attemptToStartServer() throws Exception {
         int attempts = 20;

@@ -49,6 +49,8 @@ public class Server {
     private ServerSocket serverSocket;
     private Map<String, Supplier<WebSocketHandler>> handlerFactories = new HashMap<>();
 
+    private FallbackHandler fallbackHandler = new DefaultFallbackHandler();
+
     /**
      * Constructs a new server instance but doesn't start listening for client connections.
      *
@@ -95,6 +97,18 @@ public class Server {
         if (endpoint == null || "".equals(endpoint)) throw new IllegalArgumentException("Endpoint must be non-empty.");
         if (serverSocket != null) throw new IllegalStateException("Please add handler factories before starting the server.");
         handlerFactories.put(endpoint, handlerFactory);
+    }
+
+    /**
+     * Sets the fallback handler to use for endpoints with no registered handler factory. Fallback handler must be set
+     * before the server is started.
+     *
+     * @param handler the fallback handler; {@code null} restores the default handler (which responds 404)
+     */
+    public void setFallbackHandler(FallbackHandler handler) {
+        if (serverSocket != null) throw new IllegalStateException("Please add fallback handler before starting the server.");
+        if (handler == null) handler = new DefaultFallbackHandler();
+        fallbackHandler = handler;
     }
 
     /**
@@ -149,7 +163,7 @@ public class Server {
                 // We need this on Linux. Without it the close frame sent just before closing the
                 // socket won't be seen by the WebSocket client.
                 clientSocket.setTcpNoDelay(true);
-                
+
                 mainExecutor.execute(new ClientHandler(clientSocket));
             }
         } catch (SocketException e) {
@@ -204,8 +218,8 @@ public class Server {
                             clientSocket.getRemoteSocketAddress(), ex.method));
                 sendMethodNotAllowedResponse();
             } catch (IllegalArgumentException ex) {
-                lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s sent a malformed request.",
-                        clientSocket.getRemoteSocketAddress()));
+                lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s sent a malformed request: %s",
+                        clientSocket.getRemoteSocketAddress(), ex.getMessage()));
                 sendBadRequestResponse();
             } catch (FileNotFoundException ex) {
                 lazyLog(LogLevel.WARN, () -> String.format("WebSocket client from %s requested an unknown endpoint.",
@@ -232,14 +246,18 @@ public class Server {
         private void communicate() throws IOException, NoSuchAlgorithmException {
             maybeLogSSLDetails();
 
-            Headers headers = Headers.read(in);
-            if (!headers.isProperUpgrade()) throw new IllegalArgumentException("Handshake has malformed upgrade.");
-            if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
+            Headers headers = Headers.read(in, isSSL());
             String endpoint = headers.endpoint;
 
             Supplier<WebSocketHandler> handlerFactory = handlerFactories.get(endpoint);
-            if (handlerFactory == null || (handler = handlerFactory.get()) == null)
-                throw new FileNotFoundException("Unknown endpoint: " + endpoint);
+            if (handlerFactory == null || (handler = handlerFactory.get()) == null) {
+                fallbackHandler.handle(createConnection(headers));
+                return;
+            }
+
+            if (!"GET".equals(headers.method)) throw new MethodNotAllowedException(headers.method);
+            if (!headers.isProperUpgrade()) throw new IllegalArgumentException("Handshake has malformed upgrade.");
+            if (headers.version() != SupportedVersion) throw new IllegalArgumentException("Bad version, must be: " + SupportedVersion);
 
             lazyLog(LogLevel.INFO, () -> String.format("New WebSocket client from %s at endpoint '%s'.",
                         clientSocket.getRemoteSocketAddress(), endpoint));
@@ -262,8 +280,33 @@ public class Server {
             }
         }
 
+        private Connection createConnection(Headers headers) {
+            return new Connection() {
+                @Override public String method() { return headers.method; }
+                @Override public URI uri() { return headers.uri; }
+                @Override public InputStream inputStream() { return in; }
+                @Override public OutputStream outputStream() { return out; }
+                @Override public Iterable<String> headerNames() { return headers.headers.keySet(); }
+                @Override public Optional<String> header(String name) {
+                    if (name == null) throw new IllegalArgumentException("Header name must be non-null");
+                    String value = headers.headers.get(name);
+                    return Optional.ofNullable(value);
+                }
+                @Override
+                public void sendResponse(int statusCode, String reason, Map<String, String> headers) {
+                    if (reason == null) reason = "";
+                    if (headers == null) headers = Collections.emptyMap();
+                    ClientHandler.this.sendResponse(statusCode, reason, headers);
+                }
+            };
+        }
+
+        private boolean isSSL() {
+            return clientSocket instanceof SSLSocket;
+        }
+
         private void maybeLogSSLDetails() {
-            if (clientSocket instanceof SSLSocket) {
+            if (isSSL()) {
                 SSLSocket sslSocket = (SSLSocket) clientSocket;
                 SSLSession sslSession = sslSocket.getSession();
                 lazyLog(LogLevel.DEBUG, () -> String.format("SSL session uses protocol %s and cipher suite %s.",
@@ -342,7 +385,7 @@ public class Server {
                 put("Connection", "upgrade");
                 put("Sec-WebSocket-Accept", responseKey);
             }};
-            sendResponse(101, "Switching Protocols", headers);
+            sendEmptyResponseBeforeClose(101, "Switching Protocols", headers);
         }
 
         private void sendBadRequestResponse() {
@@ -350,18 +393,31 @@ public class Server {
             Map<String, String> headers = new HashMap<String, String>() {{
                 put("Sec-WebSocket-Version", Integer.toString(SupportedVersion));
             }};
-            sendResponse(400, "Bad Request", headers);
+            sendEmptyResponseBeforeClose(400, "Bad Request", headers);
         }
         private void sendMethodNotAllowedResponse() {
             Map<String, String> headers = new HashMap<String, String>() {{
                 put("Allow", "GET");
             }};
-            sendResponse(405, "Method Not Allowed", headers);
+            sendEmptyResponseBeforeClose(405, "Method Not Allowed", headers);
         }
         private void sendNotFoundResponse() {
-            sendResponse(404, "Not Found", Collections.emptyMap());
+            sendEmptyResponseBeforeClose(404, "Not Found", Collections.emptyMap());
         }
 
+        private void sendEmptyResponseBeforeClose(int statusCode, String reason, Map<String, String> headers) {
+            Map<String, String> allHeaders = new HashMap<>(headers);
+            // Headers added when we don't do a connection upgrade to WebSocket!
+            if (statusCode >= 200) {
+                // https://tools.ietf.org/html/rfc7230#section-6.1
+                allHeaders.put("Connection", "close");
+
+                // https://tools.ietf.org/html/rfc7230#section-3.3.2
+                allHeaders.put("Content-Length", "0");
+            }
+
+            sendResponse(statusCode, reason, allHeaders);
+        }
         private void sendResponse(int statusCode, String reason, Map<String, String> headers) {
             PrintWriter writer = new PrintWriter(out, false);
             outputLine(writer, "HTTP/1.1 " + statusCode + " " + reason);
@@ -371,15 +427,6 @@ public class Server {
 
             // https://tools.ietf.org/html/rfc7231#section-7.4.2
             outputLine(writer, String.format("Server: %s %s", ServerName, ServerVersion));
-
-            // Headers added when we don't do a connection upgrade to WebSocket!
-            if (statusCode >= 200) {
-                // https://tools.ietf.org/html/rfc7230#section-6.1
-                outputLine(writer, "Connection: close");
-
-                // https://tools.ietf.org/html/rfc7230#section-3.3.2
-                outputLine(writer, "Content-Length: 0");
-            }
 
             outputLine(writer, "");
             writer.flush();
@@ -512,11 +559,15 @@ public class Server {
     static class Headers {
         private final Map<String, String> headers;
         final String endpoint;
+        final String method;
         final String query;
         final String fragment;
+        final URI uri;
 
-        private Headers(Map<String, String> headers, URI uri) {
+        private Headers(Map<String, String> headers, URI uri, String method) {
             this.headers = headers;
+            this.method = method;
+            this.uri = uri;
             this.endpoint = uri.getPath();
             this.query = uri.getQuery();
             this.fragment = uri.getFragment();
@@ -538,22 +589,20 @@ public class Server {
         String userAgent() { return headers.get("User-Agent"); }
         String host() { return headers.get("Host"); }
 
-        static Headers read(InputStream in) throws IOException {
+        static Headers read(InputStream in, boolean isSSL) throws IOException {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            String inputLine;
+            String inputLine, method = "";
+            String path = null;
             URI endpoint = null;
             Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             boolean isFirstLine = true;
-            while (!"".equals((inputLine = reader.readLine()))) {
+            while (!"".equals((inputLine = reader.readLine())) && inputLine != null) {
                 if (isFirstLine) {
                     String[] parts = inputLine.split(" ", 3);
                     if (parts.length != 3) throw new IllegalArgumentException("Malformed 1st header line: " + inputLine);
-                    if (!"GET".equals(parts[0])) throw new MethodNotAllowedException(parts[0]);
-                    try {
-                        endpoint = new URI("http://server" + parts[1]);
-                    } catch (URISyntaxException e) {
-                        throw new IllegalArgumentException("Invalid endpoint: " + parts[1]);
-                    }
+                    method = parts[0];
+                    if (!"HTTP/1.1".equals(parts[2])) throw new IllegalArgumentException("Only HTTP/1.1 is supported");
+                    path = parts[1];
                     isFirstLine = false;
                 }
 
@@ -562,8 +611,20 @@ public class Server {
 
                 headers.put(keyValue[0], keyValue[1].trim());
             }
+            if (isFirstLine) throw new IllegalArgumentException("No HTTP headers received");
+
+            // Figure out the entire endpoint
+            try {
+                String scheme = isSSL ? "https" : "http";
+                String host = headers.get("host");
+                if (host == null) host = "server";
+                endpoint = new URI(scheme + "://" + host + path);
+            } catch (URISyntaxException e) {
+                throw new IllegalArgumentException("Invalid endpoint: " + path);
+            }
+
             // Note: Do NOT close the reader, because the stream must remain open!
-            return new Headers(headers, endpoint);
+            return new Headers(headers, endpoint, method);
         }
     }
 
@@ -1030,6 +1091,76 @@ public class Server {
          * @see <a href="https://tools.ietf.org/html/rfc3986#section-3">Uniform Resource Identifier (URI): Generic Syntax</a>
          */
         String fragment();
+    }
+
+    /**
+     * A connection to a non-WebSocket endpoint.
+     */
+    public interface Connection {
+        /**
+         * The method (e.g. GET or POST) that the client used to request the endpoint.
+         */
+        String method();
+
+        /**
+         * The URI of the endpoint, including any Host header sent by the client.
+         */
+        URI uri();
+
+        /**
+         * The input stream through which a fallback handler can read data sent by the client.
+         */
+        InputStream inputStream();
+
+        /**
+         * The output stream through which a fallback handler can send data to the client.
+         */
+        OutputStream outputStream();
+
+        /**
+         * All header names sent by the client.
+         */
+        Iterable<String> headerNames();
+
+        /**
+         * The value (if present) of a header sent by the client.
+         *
+         * @param name case-insensitive, non-{@code null} header name
+         * @return an {@code Optional} with the header value if the specified header was sent by the client,
+         * otherwise an empty {@code Optional}
+         */
+        Optional<String> header(String name);
+
+        /**
+         * Sends an HTTP response to the client. The server will add a 'Server' header, but otherwise the fallback
+         * handler needs to set all headers correctly (e.g. Content-Length).
+         *
+         * @param statusCode the status code
+         * @param reason the status message/reason (e.g. "OK" in "200 OK"); {@code null} is treated as the empty string
+         * @param headers headers to send to the client, can be {@code null} to send no headers (except Server)
+         */
+        void sendResponse(int statusCode, String reason, Map<String, String> headers);
+    }
+
+    /**
+     * A fallback handler deals with a connection to an unknown endpoint. This makes it possible to let non-WebSocket
+     * endpoints be regular HTTP endpoints, for example.
+     */
+    public interface FallbackHandler {
+        /**
+         * Handles the connection to an endpoint for which a WebSocket handler hasn't been registered.
+         *
+         * @param connection an object that provides access to connection details
+         * @throws IOException if an I/O error occurs
+         */
+        void handle(Connection connection) throws IOException;
+    }
+
+    static class DefaultFallbackHandler implements FallbackHandler {
+        @Override
+        public void handle(Connection connection) throws IOException {
+            throw new FileNotFoundException("Unknown endpoint: " + connection.uri().getPath());
+        }
     }
 
     /**

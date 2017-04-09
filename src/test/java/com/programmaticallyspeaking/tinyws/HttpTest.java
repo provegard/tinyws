@@ -1,60 +1,29 @@
 package com.programmaticallyspeaking.tinyws;
 
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeSuite;
 import org.testng.annotations.Test;
 
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import static org.testng.Assert.assertEquals;
 
-public class HttpTest extends ClientTestBase {
+public class HttpTest extends HttpTestBase {
 
-    private List<HttpURLConnection> connections = new ArrayList<>();
 
-    @BeforeSuite
-    public void init() {
-        // Allow setting e.g. the Connection header
-        System.setProperty("sun.net.http.allowRestrictedHeaders", "true");
-    }
+    private HttpURLConnection sendGET(String path, Consumer<HttpURLConnection> configure) throws Exception {
+        Map<String, String> h = headers(
+            "Connection", "Upgrade",
+            "Upgrade", "websocket",
+            "Sec-WebSocket-Version", "13",
+            "Sec-WebSocket-Key", "dGlueXdzIEZUVw=="
+        );
 
-    @AfterMethod
-    public void cleanup() {
-        while (connections.size() > 0) {
-            connections.remove(0).disconnect();
-        }
-    }
-
-    private URL createURL(String path) throws MalformedURLException {
-        return new URL("http://" + host + ":" + port + path);
+        return sendGET(path, h, configure);
     }
 
     private HttpURLConnection sendPOST() throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) createURL("/").openConnection();
-        connection.setRequestMethod("POST");
-        connection.connect();
-
-        connections.add(connection);
-        return connection;
-    }
-
-    private HttpURLConnection sendGET(String path, Consumer<HttpURLConnection> configure) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) createURL(path).openConnection();
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("Connection", "Upgrade");
-        connection.setRequestProperty("Upgrade", "websocket");
-        connection.setRequestProperty("Sec-WebSocket-Version", "13");
-        connection.setRequestProperty("Sec-WebSocket-Key", "dGlueXdzIEZUVw==");
-        configure.accept(connection);
-        connection.connect();
-
-        connections.add(connection);
-        return connection;
+        return sendPOST("/", null);
     }
 
     @Test
