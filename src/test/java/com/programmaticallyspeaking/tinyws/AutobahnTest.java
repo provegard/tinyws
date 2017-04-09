@@ -1,28 +1,32 @@
 package com.programmaticallyspeaking.tinyws;
 
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.testng.SkipException;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.stream.StreamSupport;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static java.util.Comparator.reverseOrder;
 import static java.util.stream.Collectors.toList;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.testng.Assert.assertTrue;
 
 public class AutobahnTest extends ClientTestBase {
 
@@ -31,8 +35,9 @@ public class AutobahnTest extends ClientTestBase {
 
     private static final List<String> AllCases = singletonList("*");
     private static final List<String> casesToRun = AllCases;
-    private static final List<String> okStatuses = asList("pass( [0-9]+ ms)?", "non-strict", "info");
-    private static final List<String> ignoredStatuses = asList("missing", "unimplemented");
+    private static final List<String> ignoredBehaviors = asList("missing", "unimplemented");
+    private static final List<String> okBehaviors = asList("ok", "non-strict", "informational");
+    private static final List<String> okCloseBehaviors = asList("ok", "informational");
 
     @Override
     protected Server.WebSocketHandler createHandler() {
@@ -80,11 +85,19 @@ public class AutobahnTest extends ClientTestBase {
 
         try {
             Path reportPath = FileSystems.getDefault().getPath(reportDir);
-            Path indexFile = reportPath.resolve("index.html");
-            Document doc = Jsoup.parse(indexFile.toFile(), "utf-8");
-            return doc.select(".agent_case_result_row").stream()
-                    .map(elem -> rightPadWithNulls(elem.select("td").stream().map(Element::text).toArray(), 3))
-                    .iterator();
+            Path jsonReport = reportPath.resolve("index.json");
+
+            ObjectMapper mapper = new ObjectMapper();
+            try(InputStreamReader reader = new FileReader(jsonReport.toFile())) {
+                JsonNode report = mapper.readTree(reader);
+                JsonNode serverNode = report.at("/TinyWS Server @VERSION@");
+                return StreamSupport.stream(Spliterators.spliteratorUnknownSize(serverNode.fieldNames(), Spliterator.ORDERED), false)
+                        .map(fieldName-> new Object[]{
+                                fieldName,
+                                serverNode.at("/" + fieldName + "/behavior").asText(),
+                                serverNode.at("/" + fieldName + "/behaviorClose").asText()
+                        }).iterator();
+            }
         } catch (Exception ex) {
             return singletonList(new Object[] { null, ex.getMessage(), null }).iterator();
         }
@@ -96,15 +109,18 @@ public class AutobahnTest extends ClientTestBase {
     }
 
     @Test(dataProvider = "autobahnTestCases")
-    public void testAutobahn(String caseNo, String status, String close) {
-        if (caseNo == null) throw new IllegalStateException(status);
-        String statusLower = status.toLowerCase();
-        if (ignoredStatuses.contains(statusLower)) {
-            throw new SkipException(status);
+    public void testAutobahn(String caseNo, String behavior, String behaviorClose) {
+        if (caseNo == null) throw new IllegalStateException(behavior);
+        String behaviorLower = behavior.toLowerCase();
+        String behaviorCloseLower = behaviorClose.toLowerCase();
+        if (ignoredBehaviors.contains(behaviorLower)) {
+            throw new SkipException(behavior);
         } else {
-            List<String> matches = okStatuses.stream().filter(statusLower::matches).collect(toList());
-            assertThat(matches).isNotEmpty().describedAs("Status should be ok-ish: " + status);
-            assertThat(close).matches("^[0-9]+$").describedAs("Close code should be numeric: " + close);
+            List<String> matchingBehaviors = okBehaviors.stream().filter(behaviorLower::matches).collect(toList());
+            assertThat(matchingBehaviors).isNotEmpty().describedAs("Behavior should be ok-ish: " + behavior);
+
+            List<String> matchingCloseBehaviors = okCloseBehaviors.stream().filter(behaviorCloseLower::matches).collect(toList());
+            assertThat(matchingCloseBehaviors).isNotEmpty().describedAs("Close behavior should be ok-ish: " + behaviorClose);
         }
     }
 
@@ -124,12 +140,5 @@ public class AutobahnTest extends ClientTestBase {
     private static String escape(String path) {
         // for Windows
         return path.replace("\\", "\\\\");
-    }
-
-    private static Object[] rightPadWithNulls(Object[] array, int desiredLength) {
-        if (array.length >= desiredLength) return array;
-        Object[] ret = new Object[desiredLength];
-        System.arraycopy(array, 0, ret, 0, array.length);
-        return ret;
     }
 }
