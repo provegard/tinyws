@@ -24,7 +24,7 @@ Features:
 * Standards-compliant (according to AutoBahn|Testsuite at least)
 * Tiny&mdash;one file
 * NO external dependencies
-* Requires Java 8
+* Requires Java 8 (Travis-CI currently runs the tests against 1.8.0_31)
 * Multiple endpoints
 * Configurable Maximum frame size (controls fragmentation)
 * Configurable address and port
