@@ -589,14 +589,27 @@ public class Server {
         String userAgent() { return headers.get("User-Agent"); }
         String host() { return headers.get("Host"); }
 
+        private static String readHeaderLine(InputStream in) throws IOException {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            int b;
+            while ((b = in.read()) != 13) {
+                if (b < 0) break; // EOS, return what we have
+                bytes.write(b);
+            }
+            if (b != -1) {
+                // Read one more, but it has to be LF
+                if (in.read() != 10) throw new IOException("Expected LF after CR in HTTP header");
+            }
+            return new String(bytes.toByteArray(), StandardCharsets.US_ASCII);
+        }
+
         static Headers read(InputStream in, boolean isSSL) throws IOException {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(in));
             String inputLine, method = "";
             String path = null;
             URI endpoint = null;
             Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             boolean isFirstLine = true;
-            while (!"".equals((inputLine = reader.readLine())) && inputLine != null) {
+            while (!"".equals((inputLine = readHeaderLine(in)))) {
                 if (isFirstLine) {
                     String[] parts = inputLine.split(" ", 3);
                     if (parts.length != 3) throw new IllegalArgumentException("Malformed 1st header line: " + inputLine);
