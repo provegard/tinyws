@@ -1,5 +1,10 @@
 # Changes
 
+## 0.0.5 (2017-04-10)
+
+* Support for fallback handler. A fallback handler is invoked for all endpoints that don't have a
+  WebSocket handler.
+
 ## 0.0.4 (2017-03-24)
 
 * SSL support
