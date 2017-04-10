@@ -14,7 +14,7 @@ several megabytes of dependencies.
 
 ## Status
 
-Version 0.0.5.
+Version 0.0.6.
 
 It passes all tests of [Autobahn|Testsuite](https://github.com/crossbario/autobahn-testsuite) version
 0.7.5, except 12.\* and 13.\* (compression using the permessage-deflate extension).

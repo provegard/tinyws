@@ -1,5 +1,11 @@
 # Changes
 
+## 0.0.6 (2017-04-10)
+
+* Bugfix: Don't use a Reader to read HTTP headers, since it may consume too much data, which is
+  problematic for a fallback handler that wants to read a POST request.
+* Bugfix: Parse the results from the Autobahn test suite correctly.
+
 ## 0.0.5 (2017-04-10)
 
 * Support for fallback handler. A fallback handler is invoked for all endpoints that don't have a
