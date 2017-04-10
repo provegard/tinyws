@@ -77,7 +77,7 @@ For SSL, change _fuzzingclient.json_ so that it uses a **wss** URL instead:
 
 ...and then run the echo server like this:
 
-    ./gradles -Pargs="wss/keystore.jks storepassword keypassword"
+    ./gradlew -Pargs="wss/keystore.jks storepassword keypassword" run
 
 (Yes, those are the actual passwords&mdash;they're not placeholders.)
  
