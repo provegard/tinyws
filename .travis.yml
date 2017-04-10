@@ -1,4 +1,11 @@
 language: java
+
+# Trying to get a newer Java 8 version than u31...
+addons:
+  apt:
+    packages:
+      - oracle-java8-installer
+
 jdk:
   - oraclejdk8
 
