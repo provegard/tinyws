@@ -14,7 +14,7 @@ several megabytes of dependencies.
 
 ## Status
 
-Version 0.0.3.
+Version 0.0.5.
 
 It passes all tests of [Autobahn|Testsuite](https://github.com/crossbario/autobahn-testsuite) version
 0.7.5, except 12.\* and 13.\* (compression using the permessage-deflate extension).
@@ -31,6 +31,7 @@ Features:
 * Configurable backlog
 * Logging via simple interface&mdash;no dependency on any particilar log framework
 * SSL (WSS) support
+* Fallback handler, for endpoints without a WebSocket handler
 
 Limitations:
 
