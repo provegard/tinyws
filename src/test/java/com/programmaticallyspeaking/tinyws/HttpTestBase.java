@@ -38,17 +38,12 @@ public class HttpTestBase extends ClientTestBase {
         connection.setRequestMethod("POST");
         connection.setDoOutput(true);
 
-        if (data != null) {
-            connection.setRequestProperty("Content-Length", "" + data.length);
-        }
-
         connection.connect();
 
         if (data != null) {
             OutputStream os = connection.getOutputStream();
             os.write(data);
-            // Calling flush has no effect, but close seems to cause the data to be sent.
-            os.close();
+            os.flush();
         }
 
         connections.add(connection);
