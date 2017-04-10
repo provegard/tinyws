@@ -90,7 +90,10 @@ public class AutobahnTest extends ClientTestBase {
             ObjectMapper mapper = new ObjectMapper();
             try(InputStreamReader reader = new FileReader(jsonReport.toFile())) {
                 JsonNode report = mapper.readTree(reader);
-                JsonNode serverNode = report.at("/TinyWS Server @VERSION@");
+                // Get the element that contains all the test case elements. The name varies depending on whether the
+                // code has been compiled with Gradle or not, so it may be either "TinyWS Server @VERSION@" or something
+                // like "TinyWS Server 0.0.5".
+                JsonNode serverNode = report.elements().next();
                 return StreamSupport.stream(Spliterators.spliteratorUnknownSize(serverNode.fieldNames(), Spliterator.ORDERED), false)
                         .map(fieldName-> new Object[]{
                                 fieldName,
