@@ -82,7 +82,7 @@ public class FallbackHandlerTest extends HttpTestBase {
     @Test
     public void Fallback_handler_should_be_able_to_read_data() throws Exception {
         handler = c -> {
-            String s = readAvailableDataAsString(c.inputStream());
+            String s = readDataAsString(c.inputStream(), Integer.parseInt(c.header("Content-Length").orElse("err")));
             c.sendResponse(200, s, null);
         };
         HttpURLConnection conn = sendPOST("/foo", "hello world".getBytes(StandardCharsets.UTF_8));
@@ -101,14 +101,20 @@ public class FallbackHandlerTest extends HttpTestBase {
         };
         HttpURLConnection conn = sendGET("/foo");
         InputStream in = conn.getInputStream();
-        String s = readAvailableDataAsString(in);
+        int len = Integer.parseInt(conn.getHeaderField("Content-Length"));
+        String s = readDataAsString(in, len);
         assertThat(s).isEqualTo("hello world");
     }
 
-    private String readAvailableDataAsString(InputStream in) throws IOException {
-        byte[] arr = new byte[4096];
-        int bytes = in.read(arr);
-        return new String(arr, 0, bytes, StandardCharsets.UTF_8);
+    private String readDataAsString(InputStream in, int len) throws IOException {
+        byte[] arr = new byte[len];
+        int read = 0;
+        while (read < len) {
+            int bytes = in.read(arr, read, arr.length - read);
+            if (bytes < 0) throw new IOException("Failed to read all data");
+            read += bytes;
+        }
+        return new String(arr, StandardCharsets.UTF_8);
     }
 
     class MyFallbackHandler implements Server.FallbackHandler {
